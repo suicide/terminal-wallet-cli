@@ -9,6 +9,8 @@ import configDefaults from "../config/config-defaults";
 import { Contract, HDNodeWallet, JsonRpcProvider, Mnemonic, Wallet } from "ethers";
 import { getFallbackProviderForNetwork } from "@railgun-community/wallet";
 import { RemoteConfig } from "../models/network-models";
+import fs from "fs";
+import path from "path";
 
 export const getChainForName = (chainName: NetworkName): Chain => {
   return NETWORK_CONFIG[chainName].chain;
@@ -85,6 +87,19 @@ export let remoteConfig: RemoteConfig;
 
 
 export const loadConfigForNetwork = async () => {
+
+  const localConfigPath = path.resolve(process.cwd(), "local-config.json");
+  if (fs.existsSync(localConfigPath)) {
+    console.log("Loading local configuration from local-config.json");
+    try {
+      const localConfig = fs.readFileSync(localConfigPath, "utf-8");
+      const config = JSON.parse(localConfig) as RemoteConfig;
+      remoteConfig = config;
+      return config;
+    } catch (e) {
+      console.error("Failed to load local config:", e);
+    }
+  }
 
   // Remote config will be added to a single chain;
   // optional ENVIRONMENT variable REMOTE_CONFIG_RPC to an rpc on Ethereum.

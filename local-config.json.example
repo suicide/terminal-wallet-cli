@@ -1,0 +1,118 @@
+{
+  "currentVersionNumber": "1.4.1",
+  "minVersionNumber": "1.4.1",
+  "blacklist": [],
+  "bootstrap": [],
+  "publicPoiAggregatorUrls": [
+    "https://ppoi.fdi.network"
+  ],
+  "apiKeys": {
+    "zeroXApi": "50451a60-e839-4f7e-a971-bfef488de1cb"
+  },
+  "wakuPubSubTopic": "/waku/2/rs/1/1",
+  "additionalDirectPeers": [
+    "/dns4/prod.rootedinprivacy.com/tcp/30304/p2p/16Uiu2HAkwNeQVY32bUrL1eM68ryMa48PXY5Bhfxfg9e2byYcc46m",
+    "/dns4/prod.rootedinprivacy.com/tcp/8000/wss/p2p/16Uiu2HAkwNeQVY32bUrL1eM68ryMa48PXY5Bhfxfg9e2byYcc46m"
+  ],
+  "trustedFeeSigner": [
+    "0zk1qyqhtwaa9zj3ug9dmxhfedappvm509w7dr5lgadaehxz38w9u457mrv7j6fe3z53layes62mktxj5kd6reh2kxd39ds2gnpf6wphtw39y5g36lsvukeywfqa8y0",
+    "0zk1qyzgh9ctuxm6d06gmax39xutjgrawdsljtv80lqnjtqp3exxayuf0rv7j6fe3z53laetcl9u3cma0q9k4npgy8c8ga4h6mx83v09m8ewctsekw4a079dcl5sw4k",
+    "0zk1qy88aamk4dp3rn2dvfdu5u8vvtfs89vg8h6zyajr4g5mq0ykm28e0rv7j6fe3z53l7zpahc5w52u8juzg54ypn24slqsyy3dy57s5k3669dyg3jxyp6czxszfs7"
+  ],
+  "network": {
+    "1": {
+      "name": "Ethereum",
+      "flags": {
+        "canSendPublic": true,
+        "canSendShielded": true,
+        "canShield": true,
+        "canUnshield": true,
+        "canSwapPublic": true,
+        "canSwapShielded": true,
+        "canRelayAdapt": true
+      },
+      "providers": [
+        "https://eth.llamarpc.com",
+        "https://eth-mainnet.public.blastapi.io",
+        "https://ethereum-rpc.publicnode.com",
+        "https://cloudflare-eth.com/"
+      ]
+    },
+    "56": {
+      "name": "BNB_Chain",
+      "flags": {
+        "canSendPublic": true,
+        "canSendShielded": true,
+        "canShield": true,
+        "canUnshield": true,
+        "canSwapPublic": true,
+        "canSwapShielded": true,
+        "canRelayAdapt": true
+      },
+      "providers": [
+        "https://binance.llamarpc.com",
+        "https://bsc-mainnet.public.blastapi.io",
+        "https://bsc.blockpi.network/v1/rpc/public",
+        "https://bsc.rpc.blxrbdn.com",
+        "https://bsc-dataseed4.defibit.io",
+        "https://bsc-dataseed2.binance.org"
+      ]
+    },
+    "137": {
+      "name": "Polygon",
+      "flags": {
+        "canSendPublic": true,
+        "canSendShielded": true,
+        "canShield": true,
+        "canUnshield": true,
+        "canSwapPublic": true,
+        "canSwapShielded": true,
+        "canRelayAdapt": true
+      },
+      "providers": [
+        "https://polygon.llamarpc.com",
+        "https://polygon.meowrpc.com",
+        "https://rpc-mainnet.matic.quiknode.pro",
+        "https://polygon-bor.publicnode.com",
+        "https://polygon-rpc.com",
+        "https://rpc-mainnet.maticvigil.com"
+      ]
+    },
+    "42161": {
+      "name": "Arbitrum",
+      "flags": {
+        "canSendPublic": true,
+        "canSendShielded": true,
+        "canShield": true,
+        "canUnshield": true,
+        "canSwapPublic": true,
+        "canSwapShielded": true,
+        "canRelayAdapt": true
+      },
+      "providers": [
+        "https://arbitrum.llamarpc.com",
+        "https://arbitrum-one.public.blastapi.io",
+        "https://endpoints.omniatech.io/v1/arbitrum/one/public",
+        "https://arbitrum-one.publicnode.com",
+        "https://arbitrum.blockpi.network/v1/rpc/public"
+      ]
+    },
+    "11155111": {
+      "name": "Ethereum_Sepolia",
+      "flags": {
+        "canSendPublic": true,
+        "canSendShielded": true,
+        "canShield": true,
+        "canUnshield": true,
+        "canSwapPublic": true,
+        "canSwapShielded": true,
+        "canRelayAdapt": true
+      },
+      "providers": [
+        "https://ethereum-sepolia-rpc.publicnode.com",
+        "https://rpc.ankr.com/eth_sepolia",
+        "https://ethereum-sepolia.blockpi.network/v1/rpc/public"
+      ]
+    }
+  }
+}
