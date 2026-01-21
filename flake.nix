@@ -40,6 +40,7 @@
               nodejs
               nodePackages.pnpm
               yarn
+              python3
             ];
           };
         }
