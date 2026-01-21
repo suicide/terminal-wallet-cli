@@ -11,3 +11,6 @@ build
 releases
 TODO*
 .DS_Store
+.envrc
+.env
+.direnv/
