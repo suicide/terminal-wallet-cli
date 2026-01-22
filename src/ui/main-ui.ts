@@ -129,6 +129,10 @@ const runNetworkSelectionPrompt = async () => {
       { name: NetworkName.BNBChain, message: `${"Binance".green} Network` },
       { name: NetworkName.Polygon, message: `${"Polygon".green} Network` },
       { name: NetworkName.Arbitrum, message: `${"Arbitrum".green} Network` },
+      {
+        name: NetworkName.EthereumSepolia,
+        message: `${"Ethereum Sepolia".green} Testnet`,
+      },
       // {
       //   name: NetworkName.EthereumGoerli_DEPRECATED,
       //   message: `${"Ethereum Görli".green} Testnet`,
