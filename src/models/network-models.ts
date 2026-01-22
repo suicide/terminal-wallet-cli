@@ -7,6 +7,7 @@ import {
 export enum ChainIDs {
   Ethereum = 1,
   EthereumGoerli = 5,
+  EthereumSepolia = 11155111,
   BNBChain = 56,
   PolygonPOS = 137,
   Arbitrum = 42161,
@@ -18,6 +19,7 @@ export enum ChainIDs {
 export const ChainIDToNameMap: NumMapType<NetworkName> = {
   [ChainIDs.Ethereum]: NetworkName.Ethereum,
   [ChainIDs.EthereumGoerli]: NetworkName.EthereumGoerli_DEPRECATED,
+  [ChainIDs.EthereumSepolia]: NetworkName.EthereumSepolia,
   [ChainIDs.BNBChain]: NetworkName.BNBChain,
   [ChainIDs.PolygonPOS]: NetworkName.Polygon,
   [ChainIDs.Arbitrum]: NetworkName.Arbitrum,
