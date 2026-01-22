@@ -7,13 +7,13 @@ import {
 export enum ChainIDs {
   Ethereum = 1,
   EthereumGoerli = 5,
+  EthereumSepolia = 11155111,
   BNBChain = 56,
   PolygonPOS = 137,
   Arbitrum = 42161,
   Hardhat = 31337,
   PolygonMumbai = 80001,
   ArbitrumGoerli = 421613,
-  EthereumSepolia = 11155111
 }
 
 export const ChainIDToNameMap: NumMapType<NetworkName> = {
@@ -84,5 +84,5 @@ export type RemoteConfig = {
   blacklist: string[];
   apiKeys?: APIKeys;
   network: RPCConfig;
-  trustedFeeSigner: string;
+  trustedFeeSigner?: string | string [];
 }
