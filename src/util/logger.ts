@@ -1,3 +1,17 @@
+import fs from 'fs';
+import path from 'path';
+
+const DEBUG_LOG_PATH = path.join(process.cwd(), 'debug.log');
+
+export const appendToDebugLog = (namespace: string, log: string) => {
+  try {
+    const timestamp = new Date().toISOString();
+    fs.appendFileSync(DEBUG_LOG_PATH, `${timestamp} [${namespace}] ${log}\n`);
+  } catch (err) {
+    // ignore
+  }
+}
+
 export default class Logger {
   namespace: string;
 

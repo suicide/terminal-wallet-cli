@@ -9,6 +9,7 @@ import {
   WakuBroadcasterTransaction,
   BroadcasterOptions,
 } from "../models/waku-models";
+import { appendToDebugLog } from "../util/logger";
 
 let wakuBroadcasterTransaction: WakuBroadcasterTransaction;
 let wakuLoaded = false;
@@ -96,7 +97,11 @@ export const startWakuClient = async (chainName: NetworkName) => {
   if (isDefined(remoteConfig.trustedFeeSigner)) {
     broadcasterOptions.trustedFeeSigner = remoteConfig.trustedFeeSigner;
   }
-  wakuClient.start(chain, broadcasterOptions, wakuStatusCallback, undefined);
+  const broadcasterDebugger = {
+    log: (msg: string) => appendToDebugLog("WAKU", msg),
+    error: (error: Error) => appendToDebugLog("WAKU:ERROR", error.message),
+  };
+  wakuClient.start(chain, broadcasterOptions, wakuStatusCallback, broadcasterDebugger);
 };
 
 export const stopWakuClient = async () => {
