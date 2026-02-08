@@ -64,7 +64,9 @@ import {
   getTransactionURLForChain,
   getRailgunProxyAddressForChain,
   getWrappedTokenInfoForChain,
+  getChainForName,
 } from "../network/network-util";
+import { getWakuClient } from "../waku/connect-waku";
 import { getTokenInfo } from "../balance/token-util";
 import {
   getPrivateERC20BalanceForChain,
@@ -187,6 +189,77 @@ const getDisplayTransactions = async (
   const display = [];
   if (!erc20Amounts) {
     return "";
+  }
+
+  if (isDefined(selectedBroadcaster)) {
+    try {
+      const waku = getWakuClient();
+      const chain = getChainForName(chainName);
+      const tokenAddress = selectedBroadcaster.tokenAddress;
+
+      const { decimals: tokenDecimals, symbol: tokenSymbol } =
+        await getTokenInfo(chainName, tokenAddress);
+
+      const baseTokenInfo = getWrappedTokenInfoForChain(chainName);
+      const { decimals: baseDecimals, symbol: baseSymbol } = baseTokenInfo;
+
+      const broadcastersToken = await waku.findBroadcastersForToken(
+        chain,
+        tokenAddress,
+        true,
+      );
+      const broadcastersBase = await waku.findBroadcastersForToken(
+        chain,
+        baseTokenInfo.wrappedAddress,
+        true,
+      );
+
+      const baseFeeMap: any = {};
+      broadcastersBase.forEach((b) => {
+        baseFeeMap[b.railgunAddress] = BigInt(b.tokenFee.feePerUnitGas);
+      });
+
+      if (broadcastersToken.length > 0) {
+        display.push("Available Broadcasters:".cyan);
+
+        broadcastersToken.sort((a, b) => {
+          const feeA = BigInt(a.tokenFee.feePerUnitGas);
+          const feeB = BigInt(b.tokenFee.feePerUnitGas);
+          if (feeA < feeB) return -1;
+          if (feeA > feeB) return 1;
+          return 0;
+        });
+
+        for (const b of broadcastersToken) {
+          const feeToken = BigInt(b.tokenFee.feePerUnitGas);
+          
+          // feePerUnitGas IS the price for 10^18 units of gas (1 ETH equivalent of gas)
+          // So we just need to format it.
+          const priceFormatted = parseFloat(formatUnits(feeToken, tokenDecimals))
+            .toFixed(6) // Use 6 decimals for cleaner display
+            .replace(/\.?0+$/, "");
+            
+          const priceLine = `${priceFormatted} ${tokenSymbol} : 1 ${baseSymbol}`;
+
+          const broadcasterIdentifier = getFormattedAddress(b.railgunAddress);
+          const reliability = (b.tokenFee.reliability * 100).toFixed(0);
+          const line = `${priceLine} -- ${broadcasterIdentifier} (${reliability}%)`;
+
+
+          if (
+            b.railgunAddress.toLowerCase() ===
+            selectedBroadcaster.railgunAddress.toLowerCase()
+          ) {
+            display.push(line.green);
+          } else {
+            display.push(line.grey);
+          }
+        }
+        display.push("");
+      }
+    } catch (err) {
+      // console.log(err);
+    }
   }
 
   display.push("=============== TRANSACTION REVIEW ===============".grey);
