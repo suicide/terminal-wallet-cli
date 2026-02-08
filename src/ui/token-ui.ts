@@ -105,6 +105,12 @@ export const tokenSelectionPrompt = async (
     return undefined;
   }
 
+  const valid = names.find((n) => !n.disabled);
+  if (!valid) {
+    console.log("No spendable tokens available for fees.".red);
+    return undefined;
+  }
+
   const prompt = new Select({
     format() {
       if (!this.state.submitted || this.state.cancelled) return "";
