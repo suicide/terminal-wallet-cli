@@ -15,3 +15,5 @@ TODO*
 .env
 .direnv/
 local-config.json
+
+*.log
