@@ -18,10 +18,12 @@ import {
 } from "../../gas/gas-util";
 import { PrivateGasEstimate } from "../../models/transaction-models";
 import { getCurrentShieldPrivateKey } from "../../wallet/public-utils";
+import { GasSpeed } from "../../models/gas-models";
 
 export const getShieldBaseTokenGasDetails = async (
   chainName: NetworkName,
   wrappedERC20Amount: RailgunERC20AmountRecipient,
+  gasSpeed: GasSpeed = "average",
 ): Promise<PrivateGasEstimate> => {
   const { shieldPrivateKey, fromWalletAddress } =
     await getCurrentShieldPrivateKey();
@@ -41,6 +43,7 @@ export const getShieldBaseTokenGasDetails = async (
     chainName,
     gasEstimate,
     true,
+    gasSpeed,
   )) as TransactionGasDetails;
 
   const _estimatedCost = calculateEstimatedGasCost(gasDetails);
@@ -54,6 +57,7 @@ export const getShieldBaseTokenGasDetails = async (
     estimatedGasDetails: gasDetails,
     estimatedCost: formattedCost,
     broadcasterFeeERC20Recipient: undefined,
+    gasSpeed,
   };
 };
 

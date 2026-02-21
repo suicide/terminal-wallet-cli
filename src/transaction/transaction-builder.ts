@@ -107,6 +107,9 @@ import { setStatusText } from "../ui/status-ui";
 import { getWrappedTokenBalance } from "../balance/balance-util";
 import { clearConsoleBuffer } from "../util/error-util";
 import { getMemoTextPrompt } from "../ui/memo-ui";
+import { runGasSpeedSelectionPrompt } from "../ui/gas-price-ui";
+import { GasSpeed } from "../models/gas-models";
+import { getGasEstimates } from "../gas/gas-fee";
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const { Select, Input } = require("enquirer");
 
@@ -173,7 +176,8 @@ type TerminalTransaction = {
   sendTransactionDisabled?: any | undefined,
   provedTransaction?: any | undefined,
   selfSignerInfo?: any | undefined,
-  privateMemo?: any | undefined
+  privateMemo?: any | undefined,
+  gasSpeed?: GasSpeed | undefined,
 };
 
 const getDisplayTransactions = async (
@@ -479,7 +483,8 @@ export const runTransactionBuilder = async (
     sendTransactionDisabled,
     provedTransaction,
     selfSignerInfo,
-    privateMemo
+    privateMemo,
+    gasSpeed,
   } = resultObj ?? {
     confirmAmountsDisabled: undefined,
     selectFeesDisabled: undefined,
@@ -493,7 +498,8 @@ export const runTransactionBuilder = async (
     sendTransactionDisabled: undefined,
     provedTransaction: undefined,
     selfSignerInfo: undefined,
-    privateMemo: undefined
+    privateMemo: undefined,
+    gasSpeed: undefined,
   };
   if (!isDefined(resultObj)) {
     clearConsoleBuffer();
@@ -1237,9 +1243,15 @@ export const runTransactionBuilder = async (
           }
           case RailgunTransaction.Shield: {
             const erc20AmountRecipients = getERC20AmountRecipients(selections);
+
+            console.log("Fetching gas prices...".yellow);
+            const gasEstimateData = await getGasEstimates(chainName);
+            const selectedGasSpeed = await runGasSpeedSelectionPrompt(gasEstimateData);
+
             const gasEstimate = await getShieldERC20TransactionGasDetails(
               chainName,
               erc20AmountRecipients,
+              selectedGasSpeed,
             );
             header = await getDisplayTransactions(
               selections,
@@ -1255,14 +1267,21 @@ export const runTransactionBuilder = async (
               encryptionKey: password,
               incomingHeader: header !== "" ? header : incomingHeader,
               selfSignerInfo: getWalletInfoForName(getCurrentWalletName()),
+              gasSpeed: selectedGasSpeed,
             };
             break;
           }
           case RailgunTransaction.ShieldBase: {
             const erc20AmountRecipients = getERC20AmountRecipients(selections);
+
+            console.log("Fetching gas prices...".yellow);
+            const gasEstimateData = await getGasEstimates(chainName);
+            const selectedGasSpeed = await runGasSpeedSelectionPrompt(gasEstimateData);
+
             const gasEstimate = await getShieldBaseTokenGasDetails(
               chainName,
               erc20AmountRecipients[0],
+              selectedGasSpeed,
             );
             header = await getDisplayTransactions(
               selections,
@@ -1278,16 +1297,22 @@ export const runTransactionBuilder = async (
               encryptionKey: password,
               incomingHeader: header !== "" ? header : incomingHeader,
               selfSignerInfo: getWalletInfoForName(getCurrentWalletName()),
+              gasSpeed: selectedGasSpeed,
             };
             break;
           }
           case RailgunTransaction.PublicTransfer: {
             const erc20AmountRecipients = getERC20AmountRecipients(selections);
 
+            console.log("Fetching gas prices...".yellow);
+            const gasEstimateData = await getGasEstimates(chainName);
+            const selectedGasSpeed = await runGasSpeedSelectionPrompt(gasEstimateData);
+
             const { privateGasEstimate: gasEstimate, populatedTransaction } =
               await populateAndCalculateGasForERC20Transaction(
                 chainName,
                 erc20AmountRecipients[0],
+                selectedGasSpeed,
               );
 
             header = await getDisplayTransactions(
@@ -1306,15 +1331,22 @@ export const runTransactionBuilder = async (
               encryptionKey: password,
               incomingHeader: header !== "" ? header : incomingHeader,
               selfSignerInfo: getWalletInfoForName(getCurrentWalletName()),
+              gasSpeed: selectedGasSpeed,
             };
             break;
           }
           case RailgunTransaction.PublicBaseTransfer: {
             const erc20AmountRecipients = getERC20AmountRecipients(selections);
+
+            console.log("Fetching gas prices...".yellow);
+            const gasEstimateData = await getGasEstimates(chainName);
+            const selectedGasSpeed = await runGasSpeedSelectionPrompt(gasEstimateData);
+
             const { privateGasEstimate: gasEstimate, populatedTransaction } =
               await populateAndCalculateGasForBaseTokenTransaction(
                 chainName,
                 erc20AmountRecipients[0],
+                selectedGasSpeed,
               );
             header = await getDisplayTransactions(
               selections,
@@ -1332,6 +1364,7 @@ export const runTransactionBuilder = async (
               encryptionKey: password,
               incomingHeader: header !== "" ? header : incomingHeader,
               selfSignerInfo: getWalletInfoForName(getCurrentWalletName()),
+              gasSpeed: selectedGasSpeed,
             };
             break;
           }
@@ -1347,10 +1380,15 @@ export const runTransactionBuilder = async (
             break;
           }
           case RailgunTransaction.Public0XSwap: {
+            console.log("Fetching gas prices...".yellow);
+            const gasEstimateData = await getGasEstimates(chainName);
+            const selectedGasSpeed = await runGasSpeedSelectionPrompt(gasEstimateData);
+
             const { privateGasEstimate: gasEstimate, populatedTransaction } =
               await calculateGasForPublicSwapTransaction(
                 chainName,
                 swapSelections.zer0XInputs.quote.crossContractCall,
+                selectedGasSpeed,
               );
             header = await getDisplayTransactions(
               swapSelections,
@@ -1369,7 +1407,8 @@ export const runTransactionBuilder = async (
               encryptionKey: password,
               incomingHeader: header !== "" ? header : incomingHeader,
               selfSignerInfo: getWalletInfoForName(getCurrentWalletName()),
-              privateMemo
+              privateMemo,
+              gasSpeed: selectedGasSpeed,
             };
             break;
           }
@@ -1386,6 +1425,7 @@ export const runTransactionBuilder = async (
       let _bestBroadcaster;
       let _selfSignerInfo;
       let _privateGasEstimate;
+      let _gasSpeed: GasSpeed = gasSpeed ?? "average";
       try {
         let amountRecipients: RailgunERC20AmountRecipient[] = [];
 
@@ -1425,6 +1465,10 @@ export const runTransactionBuilder = async (
           _selfSignerInfo = await getSelfSignerWalletPrompt();
         }
 
+        console.log("Fetching gas prices...".yellow);
+        const gasEstimate = await getGasEstimates(chainName);
+        _gasSpeed = await runGasSpeedSelectionPrompt(gasEstimate);
+
         // eslint-disable-next-line @typescript-eslint/switch-exhaustiveness-check
         switch (transactionType) {
           case RailgunTransaction.Transfer: {
@@ -1434,7 +1478,8 @@ export const runTransactionBuilder = async (
               erc20AmountRecipients,
               encryptionKey,
               _bestBroadcaster,
-              privateMemo
+              privateMemo,
+              _gasSpeed,
             );
             break;
           }
@@ -1445,6 +1490,7 @@ export const runTransactionBuilder = async (
               erc20AmountRecipients,
               encryptionKey,
               _bestBroadcaster,
+              _gasSpeed,
             );
             break;
           }
@@ -1459,6 +1505,7 @@ export const runTransactionBuilder = async (
               wrappedERC20Amount,
               encryptionKey,
               _bestBroadcaster,
+              _gasSpeed,
             );
             break;
           }
@@ -1468,6 +1515,7 @@ export const runTransactionBuilder = async (
               swapSelections.zer0XInputs,
               encryptionKey,
               _bestBroadcaster,
+              _gasSpeed,
             );
             break;
           }
@@ -1501,7 +1549,8 @@ export const runTransactionBuilder = async (
             broadcasterSelection: _bestBroadcaster,
             privateGasEstimate: _privateGasEstimate,
             generateProofDisabled: _privateGasEstimate ? false : true,
-            privateMemo
+            privateMemo,
+            gasSpeed: _gasSpeed,
           });
         } else {
           const newPrivateGasEstimate =
@@ -1517,7 +1566,8 @@ export const runTransactionBuilder = async (
             privateGasEstimate: newPrivateGasEstimate,
             generateProofDisabled: newPrivateGasEstimate ? false : true,
             selfSignerInfo: newSelfSignerInfo,
-            privateMemo
+            privateMemo,
+            gasSpeed: _gasSpeed,
           });
         }
       }

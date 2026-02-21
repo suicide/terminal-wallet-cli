@@ -24,6 +24,7 @@ import {
 import { PrivateGasEstimate } from "../../models/transaction-models";
 import { getCurrentNetwork } from "../../engine/engine";
 import { ERC20Token } from "../../models/token-models";
+import { GasSpeed } from "../../models/gas-models";
 
 export const getOutputGasEstimate = async (
   originalGasDetails: TransactionGasDetails,
@@ -32,6 +33,7 @@ export const getOutputGasEstimate = async (
   feeTokenDetails: FeeTokenDetails | undefined,
   broadcasterSelection: SelectedBroadcaster | undefined,
   overallBatchMinGasPrice: Optional<bigint>,
+  gasSpeed: GasSpeed = "average",
 ) => {
   const estimatedGasDetails = { ...originalGasDetails, gasEstimate };
   const { symbol } = feeTokenInfo;
@@ -68,6 +70,7 @@ export const getOutputGasEstimate = async (
     estimatedCost,
     broadcasterFeeERC20Recipient,
     overallBatchMinGasPrice,
+    gasSpeed,
   };
 };
 
@@ -76,6 +79,7 @@ export const getUnshieldERC20TransactionGasEstimate = async (
   erc20AmountRecipients: RailgunERC20AmountRecipient[],
   encryptionKey: string,
   broadcasterSelection?: SelectedBroadcaster,
+  gasSpeed: GasSpeed = "average",
 ): Promise<PrivateGasEstimate | undefined> => {
   const railgunWalletID = getCurrentRailgunID();
   const txIDVersion = TXIDVersion.V2_PoseidonMerkle;
@@ -83,6 +87,7 @@ export const getUnshieldERC20TransactionGasEstimate = async (
   const gasDetailsResult = await getTransactionGasDetails(
     chainName,
     broadcasterSelection,
+    gasSpeed,
   );
 
   if (!gasDetailsResult) {
@@ -118,6 +123,7 @@ export const getUnshieldERC20TransactionGasEstimate = async (
     feeTokenDetails,
     broadcasterSelection,
     overallBatchMinGasPrice,
+    gasSpeed,
   );
 };
 

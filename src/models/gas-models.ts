@@ -1,3 +1,5 @@
+export type GasSpeed = 'network' | 'slow' | 'average' | 'fast';
+
 export type FeeHistoryResponse = {
     oldestBlock: bigint;
     reward: [string[]];

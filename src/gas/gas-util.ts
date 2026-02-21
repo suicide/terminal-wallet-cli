@@ -9,8 +9,9 @@ import {
 } from "@railgun-community/shared-models";
 import { ContractTransaction, FeeData } from "ethers";
 import { throwError } from "../util/util";
-import { getGasEstimateMatrix, getGasEstimates } from "./gas-fee";
+import { getGasEstimateMatrix, getGasEstimates, getGasValuesForSpeed } from "./gas-fee";
 import { getProviderForChain } from "../network/network-util";
+import { GasSpeed } from "../models/gas-models";
 
 export const calculatePublicGasFee = async (
   transaction: ContractTransaction,
@@ -71,22 +72,27 @@ export const getPublicGasEstimate = async (
   }
 };
 
-export const getFeeDetailsForChain = async (chainName: NetworkName): Promise<FeeData | undefined> => {
+export const getFeeDetailsForChain = async (
+  chainName: NetworkName,
+  gasSpeed: GasSpeed = "average",
+): Promise<FeeData | undefined> => {
   // eslint-disable-next-line @typescript-eslint/switch-exhaustiveness-check
   switch (chainName) {
     case NetworkName.Ethereum:
     case NetworkName.Polygon: {
       const currentGasEstimate = await getGasEstimates(chainName);
-      // const estimateResults = getGasEstimateMatrix(currentGasEstimate);
+      const { gasPrice } = currentGasEstimate;
 
-      const { gasPrice, maxFeePerGas, maxPriorityFeePerGas } =
-        currentGasEstimate;
+      const { maxFeePerGas, maxPriorityFeePerGas } = getGasValuesForSpeed(
+        currentGasEstimate,
+        gasSpeed,
+      );
 
       return {
         gasPrice,
         maxFeePerGas,
         maxPriorityFeePerGas,
-      } as FeeData
+      } as FeeData;
     }
   }
   const provider = getProviderForChain(chainName);
@@ -103,10 +109,11 @@ export const getPublicGasDetails = async (
   chainName: NetworkName,
   gasEstimate: bigint,
   isShield = false,
+  gasSpeed: GasSpeed = "average",
 ) => {
-  const feeData = await getFeeDetailsForChain(chainName);
+  const feeData = await getFeeDetailsForChain(chainName, gasSpeed);
   if (!isDefined(feeData)) {
-    throw new Error("getPublicGasDetails: missing feeData")
+    throw new Error("getPublicGasDetails: missing feeData");
   }
   const { gasPrice, maxFeePerGas, maxPriorityFeePerGas } = feeData;
   let gasDetailsInfo: {

@@ -46,6 +46,7 @@ import {
 } from "../../models/0x-models";
 import { getTransactionGasDetails } from "../private/private-tx";
 import { getCurrentEthersWallet } from "../../wallet/public-utils";
+import { GasSpeed } from "../../models/gas-models";
 
 export const updateApiKey = () => {
   const zeroXApiKey = configDefaults.apiKeys.zeroXApi;
@@ -193,6 +194,7 @@ export const getZer0XSwapTransactionGasEstimate = async (
   zer0XSwapInputs: Zer0XSwap,
   encryptionKey: string,
   broadcasterSelection?: SelectedBroadcaster,
+  gasSpeed: GasSpeed = "average",
 ): Promise<PrivateGasEstimate | undefined> => {
   const railgunWalletID = getCurrentRailgunID();
   const txIDVersion = TXIDVersion.V2_PoseidonMerkle;
@@ -200,6 +202,7 @@ export const getZer0XSwapTransactionGasEstimate = async (
   const gasDetailsResult = await getTransactionGasDetails(
     chainName,
     broadcasterSelection,
+    gasSpeed,
   );
 
   if (!gasDetailsResult) {
@@ -244,6 +247,7 @@ export const getZer0XSwapTransactionGasEstimate = async (
     feeTokenDetails,
     broadcasterSelection,
     overallBatchMinGasPrice,
+    gasSpeed,
   );
 };
 
@@ -332,12 +336,13 @@ export const getProvedZer0XSwapTransaction = async (
 export const calculateGasForPublicSwapTransaction = async (
   chainName: NetworkName,
   transaction: ContractTransaction,
+  gasSpeed: GasSpeed = "average",
 ) => {
   const from = getCurrentWalletPublicAddress();
   const finalTransaction = { ...transaction, from };
 
   const { privateGasEstimate, populatedTransaction } =
-    await calculatePublicTransactionGasDetais(chainName, finalTransaction);
+    await calculatePublicTransactionGasDetais(chainName, finalTransaction, gasSpeed);
 
   return { privateGasEstimate, populatedTransaction };
 };
