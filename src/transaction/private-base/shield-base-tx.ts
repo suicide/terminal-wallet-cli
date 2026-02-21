@@ -22,6 +22,7 @@ import { PrivateGasEstimate } from "../../models/transaction-models";
 import { getCurrentShieldPrivateKey } from "../../wallet/public-utils";
 import { getCurrentRailgunID } from "../../wallet/wallet-util";
 import { syncEphemeralIndexOnce } from "../../wallet/ephemeral-util";
+import { GasSpeed } from "../../models/gas-models";
 
 // Base-token shielding now runs through the EIP-7702 relay-adapt path (the legacy
 // relay-adapt is being sunset). The wallet SDK only takes the 7702 branch when it is
@@ -48,6 +49,7 @@ export const getShieldBaseTokenGasDetails = async (
   chainName: NetworkName,
   wrappedERC20Amount: RailgunERC20AmountRecipient,
   encryptionKey: string,
+  gasSpeed: GasSpeed = "average",
 ): Promise<PrivateGasEstimate> => {
   const { shieldPrivateKey, fromWalletAddress } =
     await getCurrentShieldPrivateKey();
@@ -72,6 +74,7 @@ export const getShieldBaseTokenGasDetails = async (
     chainName,
     gasEstimate,
     true,
+    gasSpeed,
   )) as TransactionGasDetails;
 
   const _estimatedCost = calculateEstimatedGasCost(gasDetails);
@@ -85,6 +88,7 @@ export const getShieldBaseTokenGasDetails = async (
     estimatedGasDetails: gasDetails,
     estimatedCost: formattedCost,
     broadcasterFeeERC20Recipient: undefined,
+    gasSpeed,
   };
 };
 

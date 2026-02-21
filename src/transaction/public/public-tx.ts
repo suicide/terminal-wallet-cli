@@ -23,6 +23,7 @@ import {
 } from "../../network/network-util";
 import { getCurrentWalletPublicAddress } from "../../wallet/wallet-util";
 import { PrivateGasEstimate } from "../../models/transaction-models";
+import { GasSpeed } from "../../models/gas-models";
 
 export const populatePublicERC20Transaction = async (
   erc20AmountRecipient: RailgunERC20AmountRecipient,
@@ -44,12 +45,13 @@ export type PublicTransactionDetails = {
 export const calculatePublicTransactionGasDetais = async (
   chainName: NetworkName,
   transaction: ContractTransaction,
+  gasSpeed: GasSpeed = "average",
 ): Promise<PublicTransactionDetails> => {
   if (!transaction.from) {
     throw new Error("Missing Sender for gas Estimate.");
   }
   const gasEstimate = await getPublicGasEstimate(chainName, transaction);
-  const gasDetails = await getPublicGasDetails(chainName, gasEstimate);
+  const gasDetails = await getPublicGasDetails(chainName, gasEstimate, false, gasSpeed);
   const finalTransaction = { ...transaction, ...gasDetails };
   const gasCostEstimate = await calculatePublicGasFee(finalTransaction);
   const { symbol, decimals } = getWrappedTokenInfoForChain(chainName);
@@ -61,6 +63,7 @@ export const calculatePublicTransactionGasDetais = async (
       estimatedGasDetails: gasDetails as TransactionGasDetails,
       estimatedCost: formattedCost,
       broadcasterFeeERC20Recipient: undefined,
+      gasSpeed,
     },
     populatedTransaction: finalTransaction,
   };
@@ -69,6 +72,7 @@ export const calculatePublicTransactionGasDetais = async (
 export const populateAndCalculateGasForERC20Transaction = async (
   chainName: NetworkName,
   erc20AmountRecipient: RailgunERC20AmountRecipient,
+  gasSpeed: GasSpeed = "average",
 ): Promise<PublicTransactionDetails> => {
   const transaction = await populatePublicERC20Transaction(
     erc20AmountRecipient,
@@ -77,7 +81,7 @@ export const populateAndCalculateGasForERC20Transaction = async (
   transaction.from = fromAddress;
 
   const { privateGasEstimate, populatedTransaction } =
-    await calculatePublicTransactionGasDetais(chainName, transaction);
+    await calculatePublicTransactionGasDetais(chainName, transaction, gasSpeed);
 
   return { privateGasEstimate, populatedTransaction };
 };

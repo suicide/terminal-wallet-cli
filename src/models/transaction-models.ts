@@ -4,6 +4,7 @@ import {
   FeeTokenDetails,
 } from "@railgun-community/shared-models";
 import { ERC20Token } from "./token-models";
+import { GasSpeed } from "./gas-models";
 
 export type PrivateGasEstimate = {
   symbol: string;
@@ -11,6 +12,7 @@ export type PrivateGasEstimate = {
   estimatedCost: number;
   broadcasterFeeERC20Recipient: Optional<RailgunERC20AmountRecipient>;
   overallBatchMinGasPrice: Optional<bigint>;
+  gasSpeed?: GasSpeed;
 };
 
 export type PrivateGasDetails = {

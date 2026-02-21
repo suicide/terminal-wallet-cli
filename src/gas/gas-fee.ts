@@ -3,7 +3,7 @@ import { formatUnits, parseUnits, FeeData } from "ethers";
 import { getFirstPollingProviderForChain } from "../network/network-util";
 import { promiseTimeout } from "../util/util";
 import { FeeHistoryResponse } from "../models/gas-models";
-import { CustomGasEstimate } from "../models/gas-models";
+import { CustomGasEstimate, GasSpeed } from "../models/gas-models";
 import { FeeHistoryBlock } from "../models/gas-models";
 
 // Median across the sampled blocks. Priority-fee percentiles are dominated by MEV/urgent
@@ -236,4 +236,35 @@ export const getGasFeeSelection = (
 
 export const clearGasFeeSelection = (): void => {
   selectedGasFee = undefined;
+};
+
+export const getGasValuesForSpeed = (
+  estimate: CustomGasEstimate,
+  speed: GasSpeed,
+): { maxFeePerGas: bigint; maxPriorityFeePerGas: bigint } => {
+  const { gasPrice, baseFeePerGas, slow, average, fast } = estimate;
+
+  switch (speed) {
+    case "network":
+      return {
+        maxFeePerGas: gasPrice,
+        maxPriorityFeePerGas: gasPrice > baseFeePerGas ? gasPrice - baseFeePerGas : 0n,
+      };
+    case "slow":
+      return {
+        maxFeePerGas: slow + baseFeePerGas,
+        maxPriorityFeePerGas: slow,
+      };
+    case "fast":
+      return {
+        maxFeePerGas: fast + baseFeePerGas,
+        maxPriorityFeePerGas: fast,
+      };
+    case "average":
+    default:
+      return {
+        maxFeePerGas: average + baseFeePerGas,
+        maxPriorityFeePerGas: average,
+      };
+  }
 };

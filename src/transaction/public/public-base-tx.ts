@@ -9,6 +9,7 @@ import {
   PublicTransactionDetails,
   calculatePublicTransactionGasDetais,
 } from "./public-tx";
+import { GasSpeed } from "../../models/gas-models";
 
 export const populatePublicBaseTokenTransaction = async (
   erc20AmountRecipient: RailgunERC20AmountRecipient,
@@ -26,6 +27,7 @@ export const populatePublicBaseTokenTransaction = async (
 export const populateAndCalculateGasForBaseTokenTransaction = async (
   chainName: NetworkName,
   erc20AmountRecipient: RailgunERC20AmountRecipient,
+  gasSpeed: GasSpeed = "average",
 ): Promise<PublicTransactionDetails> => {
   const transaction = await populatePublicBaseTokenTransaction(
     erc20AmountRecipient,
@@ -34,7 +36,7 @@ export const populateAndCalculateGasForBaseTokenTransaction = async (
   transaction.from = fromAddress;
 
   const { privateGasEstimate, populatedTransaction } =
-    await calculatePublicTransactionGasDetais(chainName, transaction);
+    await calculatePublicTransactionGasDetais(chainName, transaction, gasSpeed);
 
   return { privateGasEstimate, populatedTransaction };
 };

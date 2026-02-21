@@ -34,16 +34,20 @@ import {
   getWrappedTokenInfoForChain,
 } from "../../network/network-util";
 import { getFeeDetailsForChain } from "../../gas/gas-util";
+import { GasSpeed } from "../../models/gas-models";
 
 export const getOriginalGasDetailsForPrivateTransaction = async (
   chainName: NetworkName,
   broadcasterSelection?: SelectedBroadcaster,
   is7702Transaction?: boolean,
+  gasSpeed: GasSpeed = "average",
 ): Promise<PrivateGasDetails | undefined> => {
   try {
-    const feeData = await getFeeDetailsForChain(chainName);
+    const feeData = await getFeeDetailsForChain(chainName, gasSpeed);
     if (!isDefined(feeData)) {
-      throw new Error("getOriginalGasDetailsForPrivateTransaction: missing feeData")
+      throw new Error(
+        "getOriginalGasDetailsForPrivateTransaction: missing feeData",
+      );
     }
     const gasPrice = feeData.gasPrice ?? 0n;
     const maxFeePerGas = feeData.maxFeePerGas ?? feeData.gasPrice ?? 0n;
@@ -140,11 +144,13 @@ export const getTransactionGasDetails = async (
   chainName: NetworkName,
   broadcasterSelection?: SelectedBroadcaster,
   is7702tx?: boolean,
+  gasSpeed: GasSpeed = "average",
 ): Promise<PrivateGasDetails | undefined> => {
   const gasDetailsResult = await getOriginalGasDetailsForPrivateTransaction(
     chainName,
     broadcasterSelection,
-    is7702tx
+    is7702tx,
+    gasSpeed,
   );
   if (!gasDetailsResult) {
     return undefined;
@@ -178,12 +184,14 @@ export const getPrivateTransactionGasEstimate = async (
   encryptionKey: string,
   broadcasterSelection?: SelectedBroadcaster,
   memoText = "",
+  gasSpeed: GasSpeed = "average",
 ): Promise<PrivateGasEstimate | undefined> => {
   const railgunWalletID = getCurrentRailgunID();
   const txIDVersion = TXIDVersion.V2_PoseidonMerkle;
   const gasDetailsResult = await getTransactionGasDetails(
     chainName,
     broadcasterSelection,
+    gasSpeed,
   );
   if (!gasDetailsResult) {
     console.log("Failed to get Gas Details for Transaction");
@@ -246,6 +254,7 @@ export const getPrivateTransactionGasEstimate = async (
     estimatedCost,
     broadcasterFeeERC20Recipient,
     overallBatchMinGasPrice,
+    gasSpeed,
   };
 };
 
