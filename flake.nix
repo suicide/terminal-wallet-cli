@@ -41,6 +41,8 @@
               nodePackages.pnpm
               yarn
               python3
+
+              podman
             ];
           };
         }
