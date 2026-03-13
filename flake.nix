@@ -42,6 +42,8 @@
               yarn
               python3
 
+              just
+
               podman
             ];
           };
