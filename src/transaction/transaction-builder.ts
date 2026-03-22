@@ -1476,9 +1476,11 @@ export const runTransactionBuilder = async (
           _selfSignerInfo = await getSelfSignerWalletPrompt();
         }
 
-        console.log("Fetching gas prices...".yellow);
-        const gasEstimate = await getGasEstimates(chainName);
-        _gasSpeed = await runGasSpeedSelectionPrompt(gasEstimate);
+        if (!_bestBroadcaster) {
+          console.log("Fetching gas prices...".yellow);
+          const gasEstimate = await getGasEstimates(chainName);
+          _gasSpeed = await runGasSpeedSelectionPrompt(gasEstimate);
+        }
 
         // eslint-disable-next-line @typescript-eslint/switch-exhaustiveness-check
         switch (transactionType) {
