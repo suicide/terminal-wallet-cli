@@ -1,4 +1,10 @@
-export type GasSpeed = 'network' | 'slow' | 'average' | 'fast';
+export type GasSpeed =
+  | 'network'
+  | 'slowest'
+  | 'slower'
+  | 'slow'
+  | 'average'
+  | 'fast';
 
 export type FeeHistoryResponse = {
     oldestBlock: bigint;
@@ -11,6 +17,8 @@ export type CustomGasEstimate = {
   maxFeePerGas: bigint;
   maxPriorityFeePerGas: bigint;
   baseFeePerGas: bigint;
+  slowest: bigint;
+  slower: bigint;
   slow: bigint;
   average: bigint;
   fast: bigint;

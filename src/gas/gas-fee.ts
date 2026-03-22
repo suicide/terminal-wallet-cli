@@ -55,7 +55,7 @@ export const getGasEstimates = async (
 ): Promise<CustomGasEstimate> => {
   const historicalBlocks = 40;
   const currentBlockNumber = "latest";
-  const rewardPercentiles = [60, 80, 95];
+  const rewardPercentiles = [20, 40, 60, 80, 95];
   const provider = getFirstPollingProviderForChain(chainName);
 
   const gasPricePromise = await promiseTimeout(
@@ -104,9 +104,11 @@ export const getGasEstimates = async (
     false,
     historicalBlocks,
   );
-  const slow = avg(blocks.map((b) => b.priorityFeePerGas[0] as bigint));
-  const average = avg(blocks.map((b) => b.priorityFeePerGas[1] as bigint));
-  const fast = avg(blocks.map((b) => b.priorityFeePerGas[2] as bigint));
+  const slowest = avg(blocks.map((b) => b.priorityFeePerGas[0] as bigint));
+  const slower = avg(blocks.map((b) => b.priorityFeePerGas[1] as bigint));
+  const slow = avg(blocks.map((b) => b.priorityFeePerGas[2] as bigint));
+  const average = avg(blocks.map((b) => b.priorityFeePerGas[3] as bigint));
+  const fast = avg(blocks.map((b) => b.priorityFeePerGas[4] as bigint));
 
   const maxPriorityFeePerGas = average;
 
@@ -117,6 +119,8 @@ export const getGasEstimates = async (
     maxFeePerGas,
     maxPriorityFeePerGas,
     baseFeePerGas,
+    slowest,
+    slower,
     slow,
     average,
     fast,
@@ -129,6 +133,8 @@ export const getGasEstimateMatrix = (gasEstimate: CustomGasEstimate) => {
     maxFeePerGas: _maxFeePerGas,
     maxPriorityFeePerGas: _maxPriorityFeePerGas,
     baseFeePerGas,
+    slowest,
+    slower,
     slow,
     average,
     fast,
@@ -143,6 +149,16 @@ export const getGasEstimateMatrix = (gasEstimate: CustomGasEstimate) => {
       gasPrice,
       maxFeePerGas,
       maxPriorityFeePerGas,
+    },
+    slowest: {
+      gasPrice,
+      maxFeePerGas: formatUnits(slowest + baseFeePerGas, "gwei"),
+      maxPriorityFeePerGas: formatUnits(slowest, "gwei"),
+    },
+    slower: {
+      gasPrice,
+      maxFeePerGas: formatUnits(slower + baseFeePerGas, "gwei"),
+      maxPriorityFeePerGas: formatUnits(slower, "gwei"),
     },
     slow: {
       gasPrice,
@@ -167,13 +183,24 @@ export const getGasValuesForSpeed = (
   estimate: CustomGasEstimate,
   speed: GasSpeed,
 ): { maxFeePerGas: bigint; maxPriorityFeePerGas: bigint } => {
-  const { gasPrice, baseFeePerGas, slow, average, fast } = estimate;
+  const { gasPrice, baseFeePerGas, slowest, slower, slow, average, fast } =
+    estimate;
 
   switch (speed) {
     case "network":
       return {
         maxFeePerGas: gasPrice,
         maxPriorityFeePerGas: gasPrice > baseFeePerGas ? gasPrice - baseFeePerGas : 0n,
+      };
+    case "slowest":
+      return {
+        maxFeePerGas: slowest + baseFeePerGas,
+        maxPriorityFeePerGas: slowest,
+      };
+    case "slower":
+      return {
+        maxFeePerGas: slower + baseFeePerGas,
+        maxPriorityFeePerGas: slower,
       };
     case "slow":
       return {
