@@ -20,9 +20,14 @@ export const formatGwei = (value: bigint): string => {
 export const runGasSpeedSelectionPrompt = async (
   gasEstimate: CustomGasEstimate,
 ): Promise<GasSpeed> => {
-  const { gasPrice, baseFeePerGas, slow, average, fast } = gasEstimate;
+  const { gasPrice, baseFeePerGas, slowest, slower, slow, average, fast } =
+    gasEstimate;
 
   const networkMaxFee = formatGwei(gasPrice);
+  const slowestMaxFee = formatGwei(slowest + baseFeePerGas);
+  const slowestPriority = formatGwei(slowest);
+  const slowerMaxFee = formatGwei(slower + baseFeePerGas);
+  const slowerPriority = formatGwei(slower);
   const slowMaxFee = formatGwei(slow + baseFeePerGas);
   const slowPriority = formatGwei(slow);
   const avgMaxFee = formatGwei(average + baseFeePerGas);
@@ -46,6 +51,16 @@ Max Fee / Priority Fee (gwei)
         name: "network",
         message: `${"Network".padEnd(10)} | ${networkMaxFee.padStart(8)} / ${"(eth_gasPrice)".grey}`,
         hint: "Current network price",
+      },
+      {
+        name: "slowest",
+        message: `${"Slowest".padEnd(10)} | ${slowestMaxFee.padStart(8)} / ${slowestPriority.padStart(8)}`,
+        hint: "20th percentile",
+      },
+      {
+        name: "slower",
+        message: `${"Slower".padEnd(10)} | ${slowerMaxFee.padStart(8)} / ${slowerPriority.padStart(8)}`,
+        hint: "40th percentile",
       },
       {
         name: "slow",
