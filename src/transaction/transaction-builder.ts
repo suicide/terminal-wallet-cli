@@ -167,20 +167,20 @@ type SelectChoice = {
 };
 
 type TerminalTransaction = {
-  confirmAmountsDisabled?: any | undefined,
-  selectFeesDisabled?: any | undefined,
-  selections?: any |  undefined,
-  swapSelections?: any |  undefined,
-  incomingHeader?: any |  undefined,
-  encryptionKey?: any | undefined,
-  broadcasterSelection?: any | undefined,
-  privateGasEstimate?: any | undefined,
-  generateProofDisabled?: any | undefined,
-  sendTransactionDisabled?: any | undefined,
-  provedTransaction?: any | undefined,
-  selfSignerInfo?: any | undefined,
-  privateMemo?: any | undefined,
-  gasSpeed?: GasSpeed | undefined,
+  confirmAmountsDisabled?: any | undefined;
+  selectFeesDisabled?: any | undefined;
+  selections?: any | undefined;
+  swapSelections?: any | undefined;
+  incomingHeader?: any | undefined;
+  encryptionKey?: any | undefined;
+  broadcasterSelection?: any | undefined;
+  privateGasEstimate?: any | undefined;
+  generateProofDisabled?: any | undefined;
+  sendTransactionDisabled?: any | undefined;
+  provedTransaction?: any | undefined;
+  selfSignerInfo?: any | undefined;
+  privateMemo?: any | undefined;
+  gasSpeed?: GasSpeed | undefined;
 };
 
 const getDisplayTransactions = async (
@@ -199,7 +199,7 @@ const getDisplayTransactions = async (
     try {
       const waku = getWakuClient();
       const chain = getChainForName(chainName);
-      const tokenAddress = selectedBroadcaster.tokenAddress;
+      const { tokenAddress } = selectedBroadcaster;
 
       const { decimals: tokenDecimals, symbol: tokenSymbol } =
         await getTokenInfo(chainName, tokenAddress);
@@ -236,19 +236,20 @@ const getDisplayTransactions = async (
 
         for (const b of broadcastersToken) {
           const feeToken = BigInt(b.tokenFee.feePerUnitGas);
-          
+
           // feePerUnitGas IS the price for 10^18 units of gas (1 ETH equivalent of gas)
           // So we just need to format it.
-          const priceFormatted = parseFloat(formatUnits(feeToken, tokenDecimals))
+          const priceFormatted = parseFloat(
+            formatUnits(feeToken, tokenDecimals),
+          )
             .toFixed(6) // Use 6 decimals for cleaner display
             .replace(/\.?0+$/, "");
-            
+
           const priceLine = `${priceFormatted} ${tokenSymbol} : 1 ${baseSymbol}`;
 
           const broadcasterIdentifier = getFormattedAddress(b.railgunAddress);
           const reliability = (b.tokenFee.reliability * 100).toFixed(0);
           const line = `${priceLine} -- ${broadcasterIdentifier} (${reliability}%)`;
-
 
           if (
             b.railgunAddress.toLowerCase() ===
@@ -418,8 +419,8 @@ const sendBroadcastedTransaction = async (
     "Submitting Broadcasted Transaction... Responses may take up to (1) one minute."
       .yellow,
   );
-  const sendResult = await finalTransaction.send().catch(err=>{
-    if(isDefined(err.cause)){
+  const sendResult = await finalTransaction.send().catch((err) => {
+    if (isDefined(err.cause)) {
       console.log(err.cause.message);
     }
     confirmPrompt(`${err.message}`);
@@ -549,15 +550,18 @@ export const runTransactionBuilder = async (
 
   const canHaveMemo = transactionType === RailgunTransaction.Transfer;
 
-  const memoOption = typeof privateMemo !== 'undefined' ? `Edit Memo: ${privateMemo.grey}`.yellow :'Add Memo'.cyan;
+  const memoOption =
+    typeof privateMemo !== "undefined"
+      ? `Edit Memo: ${privateMemo.grey}`.yellow
+      : "Add Memo".cyan;
   const memoChoice = {
-    name: 'select-memo',
-    message: memoOption
-  }
+    name: "select-memo",
+    message: memoOption,
+  };
 
   if (selectFeesDisabled === false) {
-    if(canHaveMemo){
-      choices.push(memoChoice)
+    if (canHaveMemo) {
+      choices.push(memoChoice);
       // if this is opened, generate proof needs to happen again.
     }
     choices.push({
@@ -590,8 +594,8 @@ export const runTransactionBuilder = async (
         ? "Edit SWAP Details"
         : "Select SWAP Details".yellow
       : hasSelectionInfo
-      ? regularSelectText
-      : regularSelectText.yellow,
+        ? regularSelectText
+        : regularSelectText.yellow,
   });
 
   if (sendTransactionDisabled === false) {
@@ -633,14 +637,14 @@ export const runTransactionBuilder = async (
     privateGasEstimate,
   );
 
-  if (transactionType === RailgunTransaction.Transfer){
-    header = `${shouldShowSender() ? 'Showing'.green: 'Hiding'.yellow} Sender address to recipient.\n${header}`
+  if (transactionType === RailgunTransaction.Transfer) {
+    header = `${shouldShowSender() ? "Showing".green : "Hiding".yellow} Sender address to recipient.\n${header}`;
   }
 
   switch (result) {
     case "select-memo": {
       const newMemo = await getMemoTextPrompt();
-      if(newMemo){
+      if (newMemo) {
         return runTransactionBuilder(chainName, transactionType, {
           ...resultObj,
           // need to reset proof state too
@@ -650,7 +654,7 @@ export const runTransactionBuilder = async (
           provedTransaction: undefined,
           sendTransactionDisabled: undefined,
           generateProofDisabled: undefined,
-          privateMemo: newMemo
+          privateMemo: newMemo,
         });
       }
 
@@ -673,9 +677,8 @@ export const runTransactionBuilder = async (
         try {
           switch (transactionType) {
             case RailgunTransaction.Transfer: {
-              const _selection = await transferTokenAmountSelectionPrompt(
-                chainName,
-              );
+              const _selection =
+                await transferTokenAmountSelectionPrompt(chainName);
               selection = _selection;
               break;
             }
@@ -740,9 +743,10 @@ export const runTransactionBuilder = async (
                       } [${gasEstimate.symbol.cyan}]`,
                     );
                     if (sendPublicTransaction) {
-                      const txResult = await ethersWallet.sendTransaction(
-                        populatedTransaction,
-                      );
+                      const txResult =
+                        await ethersWallet.sendTransaction(
+                          populatedTransaction,
+                        );
                       await bgWatchSelfSignedTx(chainName, txResult);
                       approvalsLeft -= 1;
                     }
@@ -879,9 +883,10 @@ export const runTransactionBuilder = async (
                         } [${gasEstimate.symbol.cyan}]`,
                       );
                       if (sendPublicTransaction) {
-                        const txResult = await ethersWallet.sendTransaction(
-                          populatedTransaction,
-                        );
+                        const txResult =
+                          await ethersWallet.sendTransaction(
+                            populatedTransaction,
+                          );
                         await bgWatchSelfSignedTx(chainName, txResult);
                         approvalsLeft -= 1;
                       }
@@ -918,7 +923,7 @@ export const runTransactionBuilder = async (
               confirmAmountsDisabled: swapSelection ? false : true,
               selectFeesDisabled: true,
               incomingHeader: header,
-              privateMemo
+              privateMemo,
             });
           }
 
@@ -941,7 +946,7 @@ export const runTransactionBuilder = async (
             confirmAmountsDisabled: foundSelections ? false : true,
             selectFeesDisabled: true,
             incomingHeader: header,
-            privateMemo
+            privateMemo,
           });
         }
       } else {
@@ -952,9 +957,8 @@ export const runTransactionBuilder = async (
         try {
           switch (transactionType) {
             case RailgunTransaction.Transfer: {
-              const _selection = await transferTokenAmountSelectionPrompt(
-                chainName,
-              );
+              const _selection =
+                await transferTokenAmountSelectionPrompt(chainName);
               selection = _selection;
               break;
             }
@@ -1017,9 +1021,10 @@ export const runTransactionBuilder = async (
                       } [${gasEstimate.symbol.cyan}]`,
                     );
                     if (sendPublicTransaction) {
-                      const txResult = await ethersWallet.sendTransaction(
-                        populatedTransaction,
-                      );
+                      const txResult =
+                        await ethersWallet.sendTransaction(
+                          populatedTransaction,
+                        );
                       await bgWatchSelfSignedTx(chainName, txResult);
                       approvalsLeft -= 1;
                     }
@@ -1156,9 +1161,10 @@ export const runTransactionBuilder = async (
                         } [${gasEstimate.symbol.cyan}]`,
                       );
                       if (sendPublicTransaction) {
-                        const txResult = await ethersWallet.sendTransaction(
-                          populatedTransaction,
-                        );
+                        const txResult =
+                          await ethersWallet.sendTransaction(
+                            populatedTransaction,
+                          );
                         await bgWatchSelfSignedTx(chainName, txResult);
                         approvalsLeft -= 1;
                       }
@@ -1196,7 +1202,7 @@ export const runTransactionBuilder = async (
               confirmAmountsDisabled: newSwapSelection ? false : true,
               selectFeesDisabled: true,
               incomingHeader: header !== "" ? header : incomingHeader,
-              privateMemo
+              privateMemo,
             });
           }
           let foundSelections;
@@ -1218,7 +1224,7 @@ export const runTransactionBuilder = async (
             selectFeesDisabled: true,
             encryptionKey,
             incomingHeader: header !== "" ? header : incomingHeader,
-            privateMemo
+            privateMemo,
           });
         }
       }
@@ -1233,7 +1239,7 @@ export const runTransactionBuilder = async (
           confirmAmountsDisabled: false,
           selectFeesDisabled: true,
           incomingHeader: header !== "" ? header : incomingHeader,
-          privateMemo
+          privateMemo,
         };
 
         return runTransactionBuilder(
@@ -1262,7 +1268,8 @@ export const runTransactionBuilder = async (
 
             console.log("Fetching gas prices...".yellow);
             const gasEstimateData = await getGasEstimates(chainName);
-            const selectedGasSpeed = await runGasSpeedSelectionPrompt(gasEstimateData);
+            const selectedGasSpeed =
+              await runGasSpeedSelectionPrompt(gasEstimateData);
 
             const gasEstimate = await getShieldERC20TransactionGasDetails(
               chainName,
@@ -1292,7 +1299,8 @@ export const runTransactionBuilder = async (
 
             console.log("Fetching gas prices...".yellow);
             const gasEstimateData = await getGasEstimates(chainName);
-            const selectedGasSpeed = await runGasSpeedSelectionPrompt(gasEstimateData);
+            const selectedGasSpeed =
+              await runGasSpeedSelectionPrompt(gasEstimateData);
 
             const gasEstimate = await getShieldBaseTokenGasDetails(
               chainName,
@@ -1323,7 +1331,8 @@ export const runTransactionBuilder = async (
 
             console.log("Fetching gas prices...".yellow);
             const gasEstimateData = await getGasEstimates(chainName);
-            const selectedGasSpeed = await runGasSpeedSelectionPrompt(gasEstimateData);
+            const selectedGasSpeed =
+              await runGasSpeedSelectionPrompt(gasEstimateData);
 
             const { privateGasEstimate: gasEstimate, populatedTransaction } =
               await populateAndCalculateGasForERC20Transaction(
@@ -1357,7 +1366,8 @@ export const runTransactionBuilder = async (
 
             console.log("Fetching gas prices...".yellow);
             const gasEstimateData = await getGasEstimates(chainName);
-            const selectedGasSpeed = await runGasSpeedSelectionPrompt(gasEstimateData);
+            const selectedGasSpeed =
+              await runGasSpeedSelectionPrompt(gasEstimateData);
 
             const { privateGasEstimate: gasEstimate, populatedTransaction } =
               await populateAndCalculateGasForBaseTokenTransaction(
@@ -1399,7 +1409,8 @@ export const runTransactionBuilder = async (
           case RailgunTransaction.Public0XSwap: {
             console.log("Fetching gas prices...".yellow);
             const gasEstimateData = await getGasEstimates(chainName);
-            const selectedGasSpeed = await runGasSpeedSelectionPrompt(gasEstimateData);
+            const selectedGasSpeed =
+              await runGasSpeedSelectionPrompt(gasEstimateData);
 
             const { privateGasEstimate: gasEstimate, populatedTransaction } =
               await calculateGasForPublicSwapTransaction(
@@ -1607,7 +1618,7 @@ export const runTransactionBuilder = async (
               encryptionKey,
               erc20AmountRecipients,
               privateGasEstimate,
-              privateMemo
+              privateMemo,
             );
             break;
           }
@@ -1669,8 +1680,8 @@ export const runTransactionBuilder = async (
         const setConfirmAmountsDisabled = transactionTypeMet
           ? true
           : _provedTransaction
-          ? true
-          : false;
+            ? true
+            : false;
         const setSelectFeesDisabled = transactionTypeMet ? true : false;
         header = "";
         if (isDefined(swapSelections)) {
@@ -1700,7 +1711,7 @@ export const runTransactionBuilder = async (
           privateGasEstimate,
           provedTransaction: _provedTransaction,
           selfSignerInfo,
-          privateMemo
+          privateMemo,
         });
       }
 
@@ -1731,7 +1742,7 @@ export const runTransactionBuilder = async (
             );
           }
         } catch (error) {
-          const errResponseMessage = `Error Response: ${(error as Error).message}`
+          const errResponseMessage = `Error Response: ${(error as Error).message}`;
           console.log(errResponseMessage);
           await confirmPromptCatchRetry("");
 
@@ -1748,7 +1759,7 @@ export const runTransactionBuilder = async (
             privateGasEstimate,
             selfSignerInfo,
             // provedTransaction,
-            privateMemo
+            privateMemo,
           });
         }
       }
