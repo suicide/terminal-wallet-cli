@@ -90,6 +90,10 @@ export const getOriginalGasDetailsForPrivateTransaction = async (
           maxPriorityFeePerGas, //: maxFeePerGas,
         } as TransactionGasDetailsType2;
         overallBatchMinGasPrice = undefined; //originalGasDetails.maxFeePerGas;
+        break;
+      }
+      default: {
+        throw new Error(`Unsupported EVM gas type: ${String(evmGasType)}`);
       }
     }
 
