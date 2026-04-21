@@ -8,10 +8,6 @@ import { delay } from "../util/util";
 import { formatUnits, parseUnits } from "ethers";
 import { getWakuClient } from "../waku/connect-waku";
 import {
-  addRemovedBroadcaster,
-  resetBroadcasterFilters,
-} from "../waku/broadcaster-util";
-import {
   getDisplayStringFromBalance,
   getMaxBalanceLength,
   getMaxSymbolLengthFromBalances,
@@ -23,7 +19,10 @@ import {
   RailgunReadableAmount,
   RailgunSelectedAmount,
 } from "../models/balance-models";
-import { getChainForName } from "../network/network-util";
+import {
+  getChainForName,
+  getWrappedTokenInfoForChain,
+} from "../network/network-util";
 import { getTokenInfo } from "../balance/token-util";
 
 const { Select, Input, NumberPrompt } = require("enquirer");
@@ -152,97 +151,149 @@ export const feeTokenSelectionPrompt = async (
   return selection;
 };
 
-export const runFeeTokenSelector = async (
+const compareBroadcasterFees = (
+  a: { feePerUnitGas: string },
+  b: { feePerUnitGas: string },
+) => {
+  const feeA = BigInt(a.feePerUnitGas);
+  const feeB = BigInt(b.feePerUnitGas);
+  if (feeA < feeB) return -1;
+  if (feeA > feeB) return 1;
+  return 0;
+};
+
+const runBroadcasterSelectionPrompt = async (
+  chainName: NetworkName,
+  feeTokenAddress: string,
+  currentBroadcaster?: SelectedBroadcaster,
+): Promise<SelectedBroadcaster | undefined> => {
+  const waku = getWakuClient();
+  const chain = getChainForName(chainName);
+  const broadcasters = await waku.findBroadcastersForToken(
+    chain,
+    feeTokenAddress.toLowerCase(),
+    true,
+  );
+
+  if (broadcasters.length === 0) {
+    return undefined;
+  }
+
+  const { symbol: tokenSymbol, decimals: tokenDecimals } = await getTokenInfo(
+    chainName,
+    feeTokenAddress,
+  );
+  const { symbol: baseSymbol } = getWrappedTokenInfoForChain(chainName);
+
+  broadcasters.sort((a, b) => compareBroadcasterFees(a.tokenFee, b.tokenFee));
+
+  const choices = broadcasters.map((broadcaster, index) => {
+    const priceFormatted = parseFloat(
+      formatUnits(BigInt(broadcaster.tokenFee.feePerUnitGas), tokenDecimals),
+    )
+      .toFixed(6)
+      .replace(/\.?0+$/, "");
+    const reliability = (broadcaster.tokenFee.reliability * 100).toFixed(0);
+    const isCurrent =
+      currentBroadcaster?.railgunAddress.toLowerCase() ===
+      broadcaster.railgunAddress.toLowerCase();
+
+    return {
+      name: `${index}`,
+      message: `${priceFormatted} ${tokenSymbol} : 1 ${baseSymbol} -- ${getFormattedAddress(
+        broadcaster.railgunAddress,
+      )} (${reliability}%)${isCurrent ? " [current]" : ""}`,
+    };
+  });
+
+  choices.push({ name: "cancel", message: "Cancel Selection".grey });
+
+  const prompt = new Select({
+    header: " ",
+    message: `Select Broadcaster (${tokenSymbol})`,
+    choices,
+    multiple: false,
+  });
+
+  const result = await prompt.run().catch(confirmPromptCatch);
+  if (!result || result === "cancel") {
+    return undefined;
+  }
+
+  return broadcasters[parseInt(result)];
+};
+
+const selectBroadcasterForFeeToken = async (
   chainName: NetworkName,
   amountRecipients: RailgunERC20AmountRecipient[],
   currentBroadcaster?: SelectedBroadcaster,
-): Promise<{ bestBroadcaster: SelectedBroadcaster } | undefined> => {
-  const additionalChoices = currentBroadcaster
-    ? [
-        {
-          name: "different-broadcaster",
-          message: "Select Different Broadcaster".grey,
-        },
-        {
-          name: "clear-broadcaster-list",
-          message: "Clear Broadcaster Address Blocklist".grey,
-        },
-      ]
-    : [];
+  feeTokenAddress?: string,
+): Promise<{ selectedBroadcaster: SelectedBroadcaster } | undefined> => {
+  let nextFeeTokenAddress = feeTokenAddress;
+
+  if (!nextFeeTokenAddress) {
+    const feeToken = await feeTokenSelectionPrompt(
+      chainName,
+      false,
+      amountRecipients,
+    );
+    if (!feeToken) {
+      return undefined;
+    }
+    nextFeeTokenAddress = feeToken.tokenAddress;
+  }
+
+  if (!nextFeeTokenAddress) {
+    return undefined;
+  }
+
+  const selectedBroadcaster = await runBroadcasterSelectionPrompt(
+    chainName,
+    nextFeeTokenAddress,
+    currentBroadcaster,
+  );
+  if (selectedBroadcaster) {
+    return { selectedBroadcaster };
+  }
+
+  return undefined;
+};
+
+export async function runFeeTokenSelector(
+  chainName: NetworkName,
+  amountRecipients: RailgunERC20AmountRecipient[],
+  currentBroadcaster?: SelectedBroadcaster,
+): Promise<{ selectedBroadcaster: SelectedBroadcaster } | undefined> {
   const feeTokenOptionPrompt = new Select({
     header: " ",
-    message: "Transaction Fee Options",
+    message: "Transaction Submission Options",
     choices: [
-      { name: "relayed", message: "Use a Broadcaster" },
+      { name: "relayed", message: "Select Broadcaster" },
       {
         name: "self-signed",
         message: `Self Sign Transaction ${"Self-Broadcast".yellow}`,
       },
-      ...additionalChoices,
       { name: "go-back", message: "Cancel Selection".grey },
     ],
     multiple: false,
   });
   const feeOption = await feeTokenOptionPrompt.run().catch(confirmPromptCatch);
   if (feeOption) {
-    let feeTokenAddress;
-
     switch (feeOption) {
-      case "different-broadcaster": {
-        if (currentBroadcaster) {
-          feeTokenAddress = currentBroadcaster.tokenAddress;
-          addRemovedBroadcaster(currentBroadcaster.railgunAddress);
-        }
-        // WANT THIS FALL THROUGH here
-      }
       case "relayed": {
-        {
-          if (feeOption !== "different-broadcaster") {
-            const feeToken = await feeTokenSelectionPrompt(
-              chainName,
-              false,
-              amountRecipients,
-            );
-            if (!feeToken) {
-              console.log("THROWING ERROR WHY?");
-              return runFeeTokenSelector(
-                chainName,
-                amountRecipients,
-                currentBroadcaster,
-              );
-            }
-            feeTokenAddress = feeToken.tokenAddress;
-          }
-          try {
-            const waku = getWakuClient();
-            const chain = getChainForName(chainName);
-
-            const bestBroadcaster = await waku.findBestBroadcaster(
-              chain,
-              feeTokenAddress.toLowerCase(),
-              true,
-            );
-            if (bestBroadcaster) {
-              return { bestBroadcaster };
-            }
-            console.log("No Broadcasters Found for Token".yellow);
-            return runFeeTokenSelector(
-              chainName,
-              amountRecipients,
-              currentBroadcaster,
-            );
-          } catch (err) {
-            console.log(err);
-          }
-        }
-        break;
+        const selection = await selectBroadcasterForFeeToken(
+          chainName,
+          amountRecipients,
+          currentBroadcaster,
+        );
+        return selection ?? runFeeTokenSelector(
+          chainName,
+          amountRecipients,
+          currentBroadcaster,
+        );
       }
       case "self-signed": {
         return undefined;
-      }
-      case "clear-broadcaster-list": {
-        resetBroadcasterFilters();
-        return runFeeTokenSelector(chainName, amountRecipients, undefined);
       }
       case "go-back": {
         throw new Error("Going back to previous menu.");
@@ -251,7 +302,7 @@ export const runFeeTokenSelector = async (
   } else {
     throw new Error("No Fee Selection Made");
   }
-};
+}
 
 export const getTokenAmountSelectionPrompt = async (
   token: RailgunReadableAmount,

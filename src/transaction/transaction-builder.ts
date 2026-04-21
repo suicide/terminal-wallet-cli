@@ -551,8 +551,8 @@ export const runTransactionBuilder = async (
     choices.push({
       name: "select-fee",
       message: hasBroadcasterInfo
-        ? `Edit Broadcaster FeeToken / Self Signer | (Refresh Gas Estimate)`
-        : `Select Broadcaster FeeToken / Self Signer`.yellow,
+        ? `Edit Broadcaster / Self Signer | (Refresh Gas Estimate)`
+        : `Select Broadcaster / Self Signer`.yellow,
       disabled: selectFeesDisabled ?? true,
     });
   }
@@ -1432,8 +1432,8 @@ export const runTransactionBuilder = async (
       }
     }
     case "select-fee": {
-      let _broadcasterSelection;
-      let _bestBroadcaster;
+      let feeSelection;
+      let selectedBroadcaster;
       let _selfSignerInfo;
       let _privateGasEstimate;
       let _gasSpeed: GasSpeed = gasSpeed ?? "average";
@@ -1455,7 +1455,7 @@ export const runTransactionBuilder = async (
           ];
         }
 
-        _broadcasterSelection = await runFeeTokenSelector(
+        feeSelection = await runFeeTokenSelector(
           chainName,
           amountRecipients,
           broadcasterSelection,
@@ -1464,19 +1464,19 @@ export const runTransactionBuilder = async (
           if (err.message === "Going back to previous menu.") {
             console.log("going back found");
             return {
-              bestBroadcaster: broadcasterSelection,
+              selectedBroadcaster: broadcasterSelection,
             };
           } else {
             console.log(err.message);
             throw new Error(err.message);
           }
         });
-        _bestBroadcaster = _broadcasterSelection?.bestBroadcaster;
-        if (!_bestBroadcaster) {
+        selectedBroadcaster = feeSelection?.selectedBroadcaster;
+        if (!selectedBroadcaster) {
           _selfSignerInfo = await getSelfSignerWalletPrompt();
         }
 
-        if (!_bestBroadcaster) {
+        if (!selectedBroadcaster) {
           console.log("Fetching gas prices...".yellow);
           const gasEstimate = await getGasEstimates(chainName);
           _gasSpeed = await runGasSpeedSelectionPrompt(gasEstimate);
@@ -1490,7 +1490,7 @@ export const runTransactionBuilder = async (
               chainName,
               erc20AmountRecipients,
               encryptionKey,
-              _bestBroadcaster,
+              selectedBroadcaster,
               privateMemo,
               _gasSpeed,
             );
@@ -1502,7 +1502,7 @@ export const runTransactionBuilder = async (
               chainName,
               erc20AmountRecipients,
               encryptionKey,
-              _bestBroadcaster,
+              selectedBroadcaster,
               _gasSpeed,
             );
             break;
@@ -1517,7 +1517,7 @@ export const runTransactionBuilder = async (
               chainName,
               wrappedERC20Amount,
               encryptionKey,
-              _bestBroadcaster,
+              selectedBroadcaster,
               _gasSpeed,
             );
             break;
@@ -1527,7 +1527,7 @@ export const runTransactionBuilder = async (
               chainName,
               swapSelections.zer0XInputs,
               encryptionKey,
-              _bestBroadcaster,
+              selectedBroadcaster,
               _gasSpeed,
             );
             break;
@@ -1541,17 +1541,17 @@ export const runTransactionBuilder = async (
           header =
             (await getDisplayTransactions(
               swapSelections,
-              _bestBroadcaster,
+              selectedBroadcaster,
               _privateGasEstimate,
             )) ?? "";
         } else {
           header = await getDisplayTransactions(
             selections,
-            _bestBroadcaster,
+            selectedBroadcaster,
             _privateGasEstimate,
           );
         }
-        if (_bestBroadcaster) {
+        if (selectedBroadcaster) {
           return runTransactionBuilder(chainName, transactionType, {
             selections,
             swapSelections,
@@ -1559,7 +1559,7 @@ export const runTransactionBuilder = async (
             selectFeesDisabled: false,
             encryptionKey,
             incomingHeader: header !== "" ? header : incomingHeader,
-            broadcasterSelection: _bestBroadcaster,
+            broadcasterSelection: selectedBroadcaster,
             privateGasEstimate: _privateGasEstimate,
             generateProofDisabled: _privateGasEstimate ? false : true,
             privateMemo,
