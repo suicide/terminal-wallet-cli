@@ -5,12 +5,12 @@ This document provides context, commands, and guidelines for AI agents and devel
 ## 1. Project Overview
 **Terminal Wallet CLI** is a privacy-enhanced Command Line Interface EVM wallet.
 - **Core Technology**: Railgun (Privacy), Ethers.js (EVM), Waku (P2P).
-- **Platform**: Node.js (>=20).
+- **Platform**: Node.js (>=24).
 - **Language**: TypeScript (Strict).
 
 ## 2. Development Environment
 - **Package Manager**: `yarn` (v1.22.19) is specified in `package.json`, but `package-lock.json` implies `npm` usage. Stick to `npm` unless otherwise instructed.
-- **Node Version**: Engines field specifies `>=20`.
+- **Node Version**: Engines field specifies `>=24`.
 - **TS Config**: `tsconfig.json` targets `ESNext` with `NodeNext` module resolution.
 
 ## 3. Build & execution Commands

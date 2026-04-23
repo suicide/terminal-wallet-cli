@@ -17,16 +17,16 @@ It keeps the upstream CLI wallet as a base while adding local development toolin
 
 ## Build and Run
 
-- Node.js `>=20`
+- Node.js `>=24`
 - Install dependencies with `npm ci --legacy-peer-deps`
 - Rust is only required if you want to build the standalone executable
 
 ### Podman
 
 ```sh
-podman run --rm -it --workdir /app -v $(pwd):/app node:22 npm ci --legacy-peer-deps
-podman run --rm -it --workdir /app -v $(pwd):/app node:22 npm run build
-podman run --rm -it --workdir /app -v $(pwd):/app node:22 npm run start
+podman run --rm -it --workdir /app -v $(pwd):/app node:24 npm ci --legacy-peer-deps
+podman run --rm -it --workdir /app -v $(pwd):/app node:24 npm run build
+podman run --rm -it --workdir /app -v $(pwd):/app node:24 npm run start
 ```
 
 Or use `just`, which wraps the same podman setup:

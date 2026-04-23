@@ -1,4 +1,4 @@
-container := "podman run --rm -it --workdir /app -v $(pwd):/app docker.io/node:22"
+container := "podman run --rm -it --workdir /app -v $(pwd):/app docker.io/node:24"
 
 [default]
 default:
