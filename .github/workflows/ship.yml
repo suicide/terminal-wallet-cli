@@ -17,7 +17,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        node-version: [22.16.0]
+        node-version: [24.12.0]
         os: [ubuntu-22.04, macos-latest, windows-2022]
         include:
           - os: macos-latest
@@ -137,7 +137,7 @@ jobs:
         run: |
           npm ci --legacy-peer-deps --no-audit --no-fund
 
-      # Windows: DO NOT run lifecycle scripts during install (bufferutil/leveldown/utf-8-validate will fail on Node 22).
+      # Windows: DO NOT run lifecycle scripts during install because these native addons are still flaky in CI on newer Node versions.
       - name: Install Dependencies (Windows, ignore scripts)
         if: runner.os == 'Windows'
         shell: pwsh
