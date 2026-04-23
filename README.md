@@ -1,92 +1,73 @@
-## Tooling
+# Terminal Wallet CLI
 
-- Use Node.js 16.x
-- Use Rust (required for building executable)
+This repository is an experimental fork of [Terminal-Wallet/terminal-wallet-cli](https://github.com/Terminal-Wallet/terminal-wallet-cli).
 
-### Install Node Dependencies
+It keeps the upstream CLI wallet as a base while adding local development tooling, local config overrides, network updates, and broadcaster-related experiments.
 
-##### (_Required_)
+## What Changed in This Fork
 
-- Use `npm install --legacy-peer-deps` to install dependencies.
+- Added local config override support via `local-config.json`
+- Added broadcaster-focused UX:
+  - Listing available broadcasters
+  - Selecting a broadcaster from list for transactions
+  - Disabled broadcaster blacklisting
+- Gas price selection enhanced
+- Added additional bootstrapping nodes for the broadcaster waku network via local-config override
+- Added Ethereum Sepolia support and related config updates
 
-<hr>
+## Build and Run
 
-## How to Run:
+- Node.js `>=20`
+- Install dependencies with `npm ci --legacy-peer-deps`
+- Rust is only required if you want to build the standalone executable
 
-1. Download Release [link]
-2. Run From Source
-3. Build From Source
-
-#### Release Downloads:
-
-- linux
-- macosx
-- windows
-
-<br>
-<hr>
-
-# Run from Source:
-
-##### Compile the Project:
-
-- Use `npm run build`
-
-##### Run Source:
-
-- Use `npm run start`
-<br>
-
-<hr>
-
-# Build Executable from Source:
-
-#### 1. Install Rust Dependencies
-
-- Use `cargo install nj-cli` to install compilation dependencies.
-
-#### 2. Build Executable
-
-- Use `npm run ship`
-
-#### 3. Run Executable
-
-- Use `cd build`
-- Use `./terminal-wallet-cli` (_might need to chmod+x_)
-<br>
-
-<hr>
-
-# Verify Releases & Source:
-Each Release will include the sha256 hashes of the binary archives. As well as a GPG signed certificate of the verification hashes. Also included are GPG signed certs. of the included Source Code as well.
-**./PUBLICSIGNER.asc contains the signer GPG public key**
-**Please import this key into your gpg keychain if you wish to verify signed messages**
-
-Navigate to the directory in which you downloaded the releases.
-
-##### Specific Downloads:
-- Open SHA256SUMS.sha, copy the line(s) for the release(s) you've downloaded.
-- Use `echo "<copied hash & filename>" | sha256sum --check`
-<br>
-
-###### Example: 
-```sh
----SHA256SUMS.sha---
-84a5fafd21fa21f8b3ef8bd10a18a8f1c7bbcabb67477d8d6dc5d609c84b4187  release-1.0.0-linux.tar.gz
-ce93915c196698a15d957a27df586b7cdf72d499eb597b19136a9148fa1eaab7  release-1.0.0-macos.tar.gz
-c697d422472ebd78b388a6f3389a4659eb3f3af9a2c0380ee73c2194c1e816cf  release-1.0.0-win.tar.gz
-
-``` 
-***(These hashes will be out of date. DO NOT use these examples. They are purely for visual representation. Refer to the hashes found within the SHA256SUMS.sha provided with each release.)***
+### Podman
 
 ```sh
-#User: Downloaded Linux Version.
-#User: Validates Singular Hash
-echo "84a5fafd21fa21f8b3ef8bd10a18a8f1c7bbcabb67477d8d6dc5d609c84b4187  release-1.0.0-linux.tar.gz" | sha256sum --check
-#Console Output: 
-release-1.0.0-linux.tar.gz: OK
+podman run --rm -it --workdir /app -v $(pwd):/app node:22 npm ci --legacy-peer-deps
+podman run --rm -it --workdir /app -v $(pwd):/app node:22 npm run build
+podman run --rm -it --workdir /app -v $(pwd):/app node:22 npm run start
 ```
-<br>
 
-##### All Files:
-- Use `sha256sum --check SHA256SUMS.sha`
+Or use `just`, which wraps the same podman setup:
+
+```sh
+just install
+just build
+just start
+```
+
+### Native
+
+```sh
+npm ci --legacy-peer-deps
+npm run build
+npm run start
+```
+
+### Standalone Executable
+
+```sh
+cargo install nj-cli
+npm ci --legacy-peer-deps
+npm run ship
+./build/terminal-wallet-cli
+```
+
+You may need to make the binary executable with `chmod +x ./build/terminal-wallet-cli`.
+
+## Config
+
+### On-Chain Config Contract
+
+<https://etherscan.io/address/0x5e982525d50046A813DBf55Ae72a3E00e99fbC94>
+
+### Local Config Override
+
+Use a local config file to override or replace values from the on-chain config:
+
+```sh
+cp local-config.json.example local-config.json
+```
+
+This copies an up-to-date example config.
