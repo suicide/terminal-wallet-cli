@@ -8,15 +8,67 @@ import {
   isDefined,
 } from "@railgun-community/shared-models";
 import { ContractTransaction, FeeData } from "ethers";
-import { throwError } from "../util/util";
+import { promiseTimeout, throwError } from "../util/util";
 import {
   getGasEstimateMatrix,
   getGasEstimates,
   getGasFeeSelection,
   getGasValuesForSpeed,
 } from "./gas-fee";
-import { getProviderForChain } from "../network/network-util";
-import { GasSpeed } from "../models/gas-models";
+import {
+  getProviderForChain,
+  getProviderForURL,
+  getProviderURLsForChain,
+} from "../network/network-util";
+import { CustomGasEstimate, GasSpeed } from "../models/gas-models";
+
+const isUsableFeeData = (feeData: FeeData | undefined): feeData is FeeData => {
+  if (!isDefined(feeData)) {
+    return false;
+  }
+
+  return (
+    isDefined(feeData.gasPrice) ||
+    isDefined(feeData.maxFeePerGas) ||
+    isDefined(feeData.maxPriorityFeePerGas)
+  );
+};
+
+const getFallbackFeeDataForChain = async (
+  chainName: NetworkName,
+): Promise<FeeData> => {
+  const providerURLs = getProviderURLsForChain(chainName);
+  const providerErrors: string[] = [];
+
+  for (const providerURL of providerURLs) {
+    const provider = getProviderForURL(providerURL);
+
+    try {
+      const feeData = await promiseTimeout(provider.getFeeData(), 10 * 1000);
+      if (isUsableFeeData(feeData)) {
+        return feeData;
+      }
+      providerErrors.push(`[${providerURL}] Missing fee data fields`);
+    } catch (err) {
+      providerErrors.push(`[${providerURL}] ${(err as Error).message}`);
+    }
+  }
+
+  const provider = getProviderForChain(chainName);
+  try {
+    const feeData = await promiseTimeout(provider.getFeeData(), 10 * 1000);
+    if (isUsableFeeData(feeData)) {
+      return feeData;
+    }
+    providerErrors.push(`[fallback-provider] Missing fee data fields`);
+  } catch (err) {
+    providerErrors.push(`[fallback-provider] ${(err as Error).message}`);
+  }
+
+  throw new Error(
+    `Unable to get Gas Fee Data for ${chainName}. ${providerErrors.join(" | ")}`,
+  );
+};
 
 export const calculatePublicGasFee = async (
   transaction: ContractTransaction,
@@ -80,6 +132,7 @@ export const getPublicGasEstimate = async (
 export const getFeeDetailsForChain = async (
   chainName: NetworkName,
   gasSpeed: GasSpeed = "average",
+  customGasEstimate?: CustomGasEstimate,
 ): Promise<FeeData | undefined> => {
   // A gas fee selected during transaction build overrides the auto-fetched fee data for
   // this chain — applies to every flow, since all gas details funnel through here.
@@ -91,29 +144,32 @@ export const getFeeDetailsForChain = async (
   switch (chainName) {
     case NetworkName.Ethereum:
     case NetworkName.Polygon: {
-      const currentGasEstimate = await getGasEstimates(chainName);
-      const { gasPrice } = currentGasEstimate;
+      try {
+        const currentGasEstimate = customGasEstimate ?? await getGasEstimates(chainName);
+        const { gasPrice } = currentGasEstimate;
 
-      const { maxFeePerGas, maxPriorityFeePerGas } = getGasValuesForSpeed(
-        currentGasEstimate,
-        gasSpeed,
-      );
+        const { maxFeePerGas, maxPriorityFeePerGas } = getGasValuesForSpeed(
+          currentGasEstimate,
+          gasSpeed,
+        );
 
-      return {
-        gasPrice,
-        maxFeePerGas,
-        maxPriorityFeePerGas,
-      } as FeeData;
+        return {
+          gasPrice,
+          maxFeePerGas,
+          maxPriorityFeePerGas,
+        } as FeeData;
+      } catch (err) {
+        console.log(
+          `Custom gas estimate failed for ${chainName}: ${(err as Error).message}`,
+        );
+      }
     }
   }
-  const provider = getProviderForChain(chainName);
-  const feeData = await provider.getFeeData().catch((err) => {
-    return undefined;
-  });
-  if (isDefined(feeData)) {
+  const feeData = await getFallbackFeeDataForChain(chainName);
+  if (isUsableFeeData(feeData)) {
     return feeData;
   }
-  throw new Error("Unable to get Gas Fee Data");
+  throw new Error(`Unable to get Gas Fee Data for ${chainName}`);
 };
 
 export const getPublicGasDetails = async (

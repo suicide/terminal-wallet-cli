@@ -46,6 +46,12 @@ export const getProviderURLForChain = (chainName: NetworkName) => {
   return configDefaults.networkConfig[chainName].providers[0].provider;
 };
 
+export const getProviderURLsForChain = (chainName: NetworkName): string[] => {
+  return configDefaults.networkConfig[chainName].providers.map(
+    ({ provider }) => provider,
+  );
+};
+
 export const getProviderForURL = (rpcEndpoint: string) => {
   return new JsonRpcProvider(rpcEndpoint);
 };

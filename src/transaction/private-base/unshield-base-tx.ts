@@ -23,7 +23,7 @@ import { PrivateGasEstimate } from "../../models/transaction-models";
 import { getCurrentRailgunID } from "../../wallet/wallet-util";
 import { syncEphemeralIndexOnce } from "../../wallet/ephemeral-util";
 import { getCurrentNetwork } from "../../engine/engine";
-import { GasSpeed } from "../../models/gas-models";
+import { CustomGasEstimate, GasSpeed } from "../../models/gas-models";
 
 export const getUnshieldBaseTokenGasEstimate = async (
   chainName: NetworkName,
@@ -31,6 +31,7 @@ export const getUnshieldBaseTokenGasEstimate = async (
   encryptionKey: string,
   broadcasterSelection?: SelectedBroadcaster,
   gasSpeed: GasSpeed = "average",
+  customGasEstimate?: CustomGasEstimate,
 ): Promise<PrivateGasEstimate | undefined> => {
   const railgunWalletID = getCurrentRailgunID();
   const txIDVersion = TXIDVersion.V2_PoseidonMerkle;
@@ -47,10 +48,11 @@ export const getUnshieldBaseTokenGasEstimate = async (
     broadcasterSelection,
     true,
     gasSpeed,
+    customGasEstimate,
   );
 
   if (!gasDetailsResult) {
-    console.log("Failed to get Gas Details for Transaction");
+    console.log(`Failed to get Gas Details for Transaction on ${chainName}`);
     return undefined;
   }
   const {
