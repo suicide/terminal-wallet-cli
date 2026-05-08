@@ -108,7 +108,7 @@ import { getWrappedTokenBalance } from "../balance/balance-util";
 import { clearConsoleBuffer } from "../util/error-util";
 import { getMemoTextPrompt } from "../ui/memo-ui";
 import { runGasSpeedSelectionPrompt } from "../ui/gas-price-ui";
-import { GasSpeed } from "../models/gas-models";
+import { CustomGasEstimate, GasSpeed } from "../models/gas-models";
 import { getGasEstimates } from "../gas/gas-fee";
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const { Select, Input } = require("enquirer");
@@ -1437,6 +1437,7 @@ export const runTransactionBuilder = async (
       let _selfSignerInfo;
       let _privateGasEstimate;
       let _gasSpeed: GasSpeed = gasSpeed ?? "average";
+      let customGasEstimate: Optional<CustomGasEstimate>;
       try {
         let amountRecipients: RailgunERC20AmountRecipient[] = [];
 
@@ -1478,8 +1479,8 @@ export const runTransactionBuilder = async (
 
         if (!selectedBroadcaster) {
           console.log("Fetching gas prices...".yellow);
-          const gasEstimate = await getGasEstimates(chainName);
-          _gasSpeed = await runGasSpeedSelectionPrompt(gasEstimate);
+          customGasEstimate = await getGasEstimates(chainName);
+          _gasSpeed = await runGasSpeedSelectionPrompt(customGasEstimate);
         }
 
         // eslint-disable-next-line @typescript-eslint/switch-exhaustiveness-check
@@ -1493,6 +1494,7 @@ export const runTransactionBuilder = async (
               selectedBroadcaster,
               privateMemo,
               _gasSpeed,
+              customGasEstimate,
             );
             break;
           }
@@ -1504,6 +1506,7 @@ export const runTransactionBuilder = async (
               encryptionKey,
               selectedBroadcaster,
               _gasSpeed,
+              customGasEstimate,
             );
             break;
           }
@@ -1519,6 +1522,7 @@ export const runTransactionBuilder = async (
               encryptionKey,
               selectedBroadcaster,
               _gasSpeed,
+              customGasEstimate,
             );
             break;
           }
@@ -1529,6 +1533,7 @@ export const runTransactionBuilder = async (
               encryptionKey,
               selectedBroadcaster,
               _gasSpeed,
+              customGasEstimate,
             );
             break;
           }

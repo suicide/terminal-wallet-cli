@@ -34,15 +34,20 @@ import {
   getWrappedTokenInfoForChain,
 } from "../../network/network-util";
 import { getFeeDetailsForChain } from "../../gas/gas-util";
-import { GasSpeed } from "../../models/gas-models";
+import { CustomGasEstimate, GasSpeed } from "../../models/gas-models";
 
 export const getOriginalGasDetailsForPrivateTransaction = async (
   chainName: NetworkName,
   broadcasterSelection?: SelectedBroadcaster,
   gasSpeed: GasSpeed = "average",
+  customGasEstimate?: CustomGasEstimate,
 ): Promise<PrivateGasDetails | undefined> => {
   try {
-    const feeData = await getFeeDetailsForChain(chainName, gasSpeed);
+    const feeData = await getFeeDetailsForChain(
+      chainName,
+      gasSpeed,
+      customGasEstimate,
+    );
     if (!isDefined(feeData)) {
       throw new Error(
         "getOriginalGasDetailsForPrivateTransaction: missing feeData",
@@ -139,11 +144,13 @@ export const getTransactionGasDetails = async (
   chainName: NetworkName,
   broadcasterSelection?: SelectedBroadcaster,
   gasSpeed: GasSpeed = "average",
+  customGasEstimate?: CustomGasEstimate,
 ): Promise<PrivateGasDetails | undefined> => {
   const gasDetailsResult = await getOriginalGasDetailsForPrivateTransaction(
     chainName,
     broadcasterSelection,
     gasSpeed,
+    customGasEstimate,
   );
   if (!gasDetailsResult) {
     return undefined;
@@ -177,6 +184,7 @@ export const getPrivateTransactionGasEstimate = async (
   broadcasterSelection?: SelectedBroadcaster,
   memoText = "",
   gasSpeed: GasSpeed = "average",
+  customGasEstimate?: CustomGasEstimate,
 ): Promise<PrivateGasEstimate | undefined> => {
   const railgunWalletID = getCurrentRailgunID();
   const txIDVersion = TXIDVersion.V2_PoseidonMerkle;
@@ -184,9 +192,10 @@ export const getPrivateTransactionGasEstimate = async (
     chainName,
     broadcasterSelection,
     gasSpeed,
+    customGasEstimate,
   );
   if (!gasDetailsResult) {
-    console.log("Failed to get Gas Details for Transaction");
+    console.log(`Failed to get Gas Details for Transaction on ${chainName}`);
     return undefined;
   }
   const {

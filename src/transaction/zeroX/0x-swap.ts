@@ -46,7 +46,7 @@ import {
 } from "../../models/0x-models";
 import { getTransactionGasDetails } from "../private/private-tx";
 import { getCurrentEthersWallet } from "../../wallet/public-utils";
-import { GasSpeed } from "../../models/gas-models";
+import { CustomGasEstimate, GasSpeed } from "../../models/gas-models";
 
 export const updateApiKey = () => {
   const zeroXApiKey = configDefaults.apiKeys.zeroXApi;
@@ -195,6 +195,7 @@ export const getZer0XSwapTransactionGasEstimate = async (
   encryptionKey: string,
   broadcasterSelection?: SelectedBroadcaster,
   gasSpeed: GasSpeed = "average",
+  customGasEstimate?: CustomGasEstimate,
 ): Promise<PrivateGasEstimate | undefined> => {
   const railgunWalletID = getCurrentRailgunID();
   const txIDVersion = TXIDVersion.V2_PoseidonMerkle;
@@ -203,10 +204,11 @@ export const getZer0XSwapTransactionGasEstimate = async (
     chainName,
     broadcasterSelection,
     gasSpeed,
+    customGasEstimate,
   );
 
   if (!gasDetailsResult) {
-    console.log("Failed to get Gas Details for Transaction");
+    console.log(`Failed to get Gas Details for Transaction on ${chainName}`);
     return undefined;
   }
 
