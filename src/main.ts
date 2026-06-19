@@ -18,6 +18,7 @@ const main = async () => {
   versionCheck(version);
   updateApiKey()
   await initializeWalletSystems().catch(async (err) => {
+    console.error("Wallet initialization failed:", (err as Error).message ?? err);
     await processSafeExit();
   });
   walletBalancePoller();

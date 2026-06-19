@@ -38,7 +38,11 @@ import {
 import { getSaltedPassword } from "./wallet-password";
 import { confirmGetPasswordPrompt } from "../ui/password-ui";
 import { computePasswordHash, getIV } from "../util/crypto";
+import { appendToDebugLog } from "../util/logger";
 import configDefaults from "../config/config-defaults";
+
+const MAX_ENGINE_INIT_RETRIES = 3;
+let engineInitAttempt = 0;
 
 export const generateKeychainPrompt = async (
   index: number = 0,
@@ -221,9 +225,15 @@ export const initializeWalletSystems = async () => {
     await initRailgunEngine();
   } catch (err) {
     console.log("engine init erro");
+    engineInitAttempt++;
     walletManager.hashedPassword = undefined;
     walletManager.comparisonRefHash = undefined;
-    initializeWalletSystems();
+    if (engineInitAttempt >= MAX_ENGINE_INIT_RETRIES) {
+      throw new Error(
+        `Engine initialization failed after ${MAX_ENGINE_INIT_RETRIES} attempts`,
+      );
+    }
+    await initializeWalletSystems();
     return;
   }
 
@@ -271,8 +281,9 @@ export const initializeWalletSystems = async () => {
     .then(async () => {
       await startWakuClient(currentNetwork);
     })
-    .catch(async (err: Error) => {
-      throw new Error(`WAKU Failed to Initialize. ${err.message}`);
+    .catch((err: Error) => {
+      console.error(`WAKU Failed to Initialize. ${err.message}`);
+      appendToDebugLog("WAKU", `Failed to Initialize. ${err.message}`);
     });
   if (walletManager.keyChain.cachedTokenInfo) {
     loadTokenDBCache(walletManager.keyChain.cachedTokenInfo);
@@ -286,8 +297,30 @@ export const initializeWalletSystems = async () => {
   }
 
   if (wallet) {
-    await loadEngineProvidersForNetwork(currentNetwork);
-    await initializeEthersWallet();
+    try {
+      await loadEngineProvidersForNetwork(currentNetwork);
+    } catch (err) {
+      console.error(
+        `Failed to load network providers: ${(err as Error).message}`,
+      );
+      appendToDebugLog(
+        "PROVIDERS",
+        `Failed to load network providers: ${(err as Error).message}`,
+      );
+      throw err;
+    }
+    try {
+      await initializeEthersWallet();
+    } catch (err) {
+      console.error(
+        `Failed to initialize ethers wallet: ${(err as Error).message}`,
+      );
+      appendToDebugLog(
+        "ETHERS",
+        `Failed to initialize ethers wallet: ${(err as Error).message}`,
+      );
+      throw err;
+    }
   }
 };
 

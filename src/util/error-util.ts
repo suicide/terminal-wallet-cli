@@ -3,6 +3,7 @@ import { rimrafSync } from "rimraf";
 import path from "path";
 import configDefaults from "../config/config-defaults";
 import { stopWakuClient } from "../waku/connect-waku";
+import { appendToDebugLog } from "../util/logger";
 
 export const RAILGUN_HEADER = `
  ███████████ ██████████ ███████████   ██████   ██████ █████ ██████   █████   █████████   █████      
@@ -59,14 +60,18 @@ process.on("unhandledRejection", async (err: Error | string) => {
   if (error.message.indexOf("could not coalesce") !== -1) {
     return;
   }
-  // console.log("unhandledRejection", err);
+  console.error("Unhandled Rejection:", error.message || error);
+  appendToDebugLog("unhandledRejection", error.message || String(error));
+  await processSafeExit();
 });
 process.on("uncaughtException", (err: Error | string) => {
   const error = err as Error;
   if (error.message.indexOf("already held by process") !== -1) {
     return;
   }
-  // console.log("uncaughtException", err);
+  console.error("Uncaught Exception:", error.message || error);
+  appendToDebugLog("uncaughtException", error.message || String(error));
+  process.exit(1);
 });
 
 export const setConsoleTitle = (
