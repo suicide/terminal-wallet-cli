@@ -65,8 +65,11 @@ export const getFirstPollingProviderForChain = (
   chainName: NetworkName,
 ): JsonRpcProvider => {
   const fallbackProvider = getFallbackProviderForChain(chainName);
-  return fallbackProvider.provider.providerConfigs[0]
-    .provider as unknown as JsonRpcProvider;
+  const provider = fallbackProvider?.provider?.providerConfigs?.[0]?.provider;
+  if (!provider) {
+    throw new Error(`No polling provider available for chain ${chainName}`);
+  }
+  return provider as unknown as JsonRpcProvider;
 };
 
 export const getProviderForChain = (chainName: NetworkName): ReturnType<typeof getFallbackProviderForNetwork> => {
@@ -130,8 +133,11 @@ export const loadConfigForNetwork = async () => {
     console.error(
       '[remote-config] Use a healthy RPC endpoint, for example: REMOTE_CONFIG_RPC="https://eth.llamarpc.com" npm run start',
     );
-    process.exit(69)
+    throw new Error("Remote config fetch failed. The application cannot start without configuration.");
   });
+  if (!raw) {
+    throw new Error("Remote config returned empty data.");
+  }
   const config = JSON.parse(raw) as RemoteConfig;
   remoteConfig = config;
   return config;

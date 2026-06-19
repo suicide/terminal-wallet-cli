@@ -30,14 +30,23 @@ export const resetMenuForScan = () => {
 };
 
 export const switchRailgunNetwork = async (chainName: NetworkName) => {
+  const previousNetwork = walletManager.keyChain.currentNetwork;
   resetMenuForScan();
 
   walletManager.keyChain.currentNetwork = chainName;
   updateCachedTokenData();
   const { keyChainPath } = configDefaults.engine;
   saveKeychainFile(walletManager.keyChain, keyChainPath);
-  await switchWakuNetwork(chainName);
-  await loadEngineProvidersForNetwork(chainName);
+
+  try {
+    await switchWakuNetwork(chainName);
+    await loadEngineProvidersForNetwork(chainName);
+  } catch (err) {
+    console.error(`Failed to switch network to ${chainName}: ${(err as Error).message ?? err}`);
+    walletManager.keyChain.currentNetwork = previousNetwork;
+    saveKeychainFile(walletManager.keyChain, keyChainPath);
+    throw err;
+  }
 };
 
 export const switchRailgunWallet = async (

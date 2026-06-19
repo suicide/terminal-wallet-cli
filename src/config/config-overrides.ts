@@ -43,10 +43,15 @@ export const overrideMainConfig = async (version: string) => {
 export const versionCheck = (version: string) => {
     console.log(("v" + version).grey);
 
+    if (!remoteConfig) {
+        console.log("Remote configuration not loaded. Skipping version check.".yellow);
+        return;
+    }
+
     if (version < remoteConfig.minVersionNumber) {
         console.log("This version is less than the minimum stable version.".bgRed);
         console.log('DEPRECATED Version. Download @', "https://www.terminal-wallet.com".bgBlue);
-        process.exit(69);
+        throw new Error("Application version is below the minimum required version.");
     }
     if (version < remoteConfig.currentVersionNumber) {
         console.log('Theres a new version available!!'.rainbow, "Download Links:".zebra, "https://www.terminal-wallet.com".bgBlue)

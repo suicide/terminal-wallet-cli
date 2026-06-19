@@ -21,9 +21,15 @@ const main = async () => {
     console.error("Wallet initialization failed:", (err as Error).message ?? err);
     await processSafeExit();
   });
-  walletBalancePoller();
-  runMainMenu();
-  latestBalancePoller(10 * 1000);
+  walletBalancePoller().catch((err) => {
+    console.error(`Balance poller crashed: ${(err as Error).message ?? err}`);
+  });
+  runMainMenu().catch((err) => {
+    console.error(`Main menu crashed: ${(err as Error).message ?? err}`);
+  });
+  latestBalancePoller(10 * 1000).catch((err) => {
+    console.error(`Latest balance poller crashed: ${(err as Error).message ?? err}`);
+  });
 };
 
 clearConsoleBuffer();
