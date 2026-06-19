@@ -1477,11 +1477,9 @@ export const runTransactionBuilder = async (
           _selfSignerInfo = await getSelfSignerWalletPrompt();
         }
 
-        if (!selectedBroadcaster) {
-          console.log("Fetching gas prices...".yellow);
-          customGasEstimate = await getGasEstimates(chainName);
-          _gasSpeed = await runGasSpeedSelectionPrompt(customGasEstimate);
-        }
+        console.log("Fetching gas prices...".yellow);
+        customGasEstimate = await getGasEstimates(chainName);
+        _gasSpeed = await runGasSpeedSelectionPrompt(customGasEstimate);
 
         // eslint-disable-next-line @typescript-eslint/switch-exhaustiveness-check
         switch (transactionType) {

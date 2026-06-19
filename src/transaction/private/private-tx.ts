@@ -81,9 +81,9 @@ export const getOriginalGasDetailsForPrivateTransaction = async (
         originalGasDetails = {
           evmGasType, // Type 1 for relayed transactions
           gasEstimate: 0n, // Always 0, we don't have this yet.
-          gasPrice: gasPrice ?? 0n,
+          gasPrice: maxFeePerGas,
         } as TransactionGasDetailsType1;
-        overallBatchMinGasPrice = originalGasDetails.gasPrice;
+        overallBatchMinGasPrice = maxFeePerGas;
         break;
       }
       // self relayed transactions
