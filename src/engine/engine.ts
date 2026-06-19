@@ -39,8 +39,9 @@ export const isEngineRunning = () => {
 const interceptLog = {
   log: (log: string) => { appendToDebugLog("ENGINE", log); },
   error: (err: any) => {
-    console.log(err.message);
-    appendToDebugLog("ENGINE:ERROR", err.message);
+    const message = typeof err === "string" ? err : err?.message ?? String(err ?? "");
+    console.log(message);
+    appendToDebugLog("ENGINE:ERROR", message);
   },
 };
 
@@ -256,12 +257,16 @@ export const loadProviderList = async (chainName: NetworkName) => {
     chainName,
     rpcPollingInterval,
   );
-  const feesShield = BigInt(
-    feesSerialized.shieldFeeV3 ?? feesSerialized.shieldFeeV2,
-  );
-  const feesUnshield = BigInt(
-    feesSerialized.unshieldFeeV3 ?? feesSerialized.shieldFeeV2,
-  );
+  if (!feesSerialized) {
+    throw new Error("No fees data returned from provider.");
+  }
+  const shieldFee = feesSerialized.shieldFeeV3 ?? feesSerialized.shieldFeeV2;
+  const unshieldFee = feesSerialized.unshieldFeeV3 ?? feesSerialized.unshieldFeeV2;
+  if (shieldFee == null || unshieldFee == null) {
+    throw new Error("Missing fee values from provider.");
+  }
+  const feesShield = BigInt(shieldFee);
+  const feesUnshield = BigInt(unshieldFee);
 
   setRailgunFees(chainName, feesShield, feesUnshield);
   loadedRailgunNetworks[chainName] = true;
@@ -298,9 +303,10 @@ export const stopEngine = async () => {
   if (!isEngineRunning()) {
     return;
   }
-  await stopRailgunEngine().catch((err) => {
-    console.log(err);
-    stopEngine();
-  });
-  return;
+  try {
+    await stopRailgunEngine();
+  } catch (err) {
+    console.log((err as Error).message ?? err);
+  }
+  railgunEngineRunning = false;
 };

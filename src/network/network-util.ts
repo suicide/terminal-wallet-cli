@@ -66,8 +66,11 @@ export const getFirstPollingProviderForChain = (
   chainName: NetworkName,
 ): JsonRpcProvider => {
   const fallbackProvider = getFallbackProviderForChain(chainName);
-  return fallbackProvider.provider.providerConfigs[0]
-    .provider as unknown as JsonRpcProvider;
+  const provider = fallbackProvider?.provider?.providerConfigs?.[0]?.provider;
+  if (!provider) {
+    throw new Error(`No polling provider available for chain ${chainName}`);
+  }
+  return provider as unknown as JsonRpcProvider;
 };
 
 export const getProviderForChain = (chainName: NetworkName): ReturnType<typeof getFallbackProviderForNetwork> => {

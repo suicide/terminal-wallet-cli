@@ -56,21 +56,21 @@ process.on("SIGINT", async () => {
   await processSafeExit();
 });
 process.on("unhandledRejection", async (err: Error | string) => {
-  const error = err as Error;
-  if (error.message.indexOf("could not coalesce") !== -1) {
+  const message = typeof err === "string" ? err : (err as Error).message ?? String(err);
+  if (message.indexOf("could not coalesce") !== -1) {
     return;
   }
-  console.error("Unhandled Rejection:", error.message || error);
-  appendToDebugLog("unhandledRejection", error.message || String(error));
+  console.error("Unhandled Rejection:", message);
+  appendToDebugLog("unhandledRejection", message);
   await processSafeExit();
 });
 process.on("uncaughtException", (err: Error | string) => {
-  const error = err as Error;
-  if (error.message.indexOf("already held by process") !== -1) {
+  const message = typeof err === "string" ? err : (err as Error).message ?? String(err);
+  if (message.indexOf("already held by process") !== -1) {
     return;
   }
-  console.error("Uncaught Exception:", error.message || error);
-  appendToDebugLog("uncaughtException", error.message || String(error));
+  console.error("Uncaught Exception:", message);
+  appendToDebugLog("uncaughtException", message);
   process.exit(1);
 });
 

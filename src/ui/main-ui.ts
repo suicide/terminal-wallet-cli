@@ -150,7 +150,11 @@ const runNetworkSelectionPrompt = async () => {
     .catch(confirmPromptCatch);
   if (selectedNetwork) {
     if (selectedNetwork !== "exit-menu") {
-      await switchRailgunNetwork(selectedNetwork);
+      try {
+        await switchRailgunNetwork(selectedNetwork);
+      } catch (err) {
+        console.error(`Network switch failed: ${(err as Error).message ?? err}`);
+      }
     }
   }
 };
@@ -623,10 +627,14 @@ const BufferManager = {
 };
 
 export const walletBalancePoller = async () => {
-  const networkName = getCurrentNetwork();
-  const chain = getChainForName(networkName);
-  const railgunWalletID = getCurrentRailgunID();
-  refreshBalances(chain, [railgunWalletID]);
+  try {
+    const networkName = getCurrentNetwork();
+    const chain = getChainForName(networkName);
+    const railgunWalletID = getCurrentRailgunID();
+    refreshBalances(chain, [railgunWalletID]);
+  } catch (err) {
+    console.error(`Balance poller error: ${(err as Error).message ?? err}`);
+  }
   await delay(5 * 60 * 1000); // 5 minute polling delay for balance refreshes
   walletBalancePoller();
 };
@@ -834,5 +842,8 @@ export const runMainMenu = async () => {
     }
   }
   clearConsoleBuffer();
-  runMainMenu();
+  runMainMenu().catch((err) => {
+    console.error(`Main menu error: ${(err as Error).message ?? err}`);
+    runMainMenu();
+  });
 };

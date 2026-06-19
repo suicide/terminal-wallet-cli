@@ -111,6 +111,11 @@ export const overrideMainConfig = async (_version: string) => {
 export const versionCheck = (version: string) => {
   console.log(("v" + version).grey);
 
+  if (!remoteConfig) {
+    console.log("Remote configuration not loaded. Skipping version check.".yellow);
+    return;
+  }
+
   if (version < remoteConfig.minVersionNumber) {
     console.log("This version is less than the minimum stable version.".bgRed);
     console.log(
