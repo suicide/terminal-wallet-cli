@@ -9,7 +9,11 @@ export class ProgressBar {
   currentText;
   currentCount = 0;
   running = false;
-  constructor(initialText: string) {
+  countdownSeconds: number;
+  startTimeMs: number;
+  constructor(initialText: string, countdownSeconds = 0) {
+    this.countdownSeconds = countdownSeconds;
+    this.startTimeMs = Date.now();
     this.currentText = initialText;
     console.log(initialText);
   }
@@ -26,7 +30,13 @@ export class ProgressBar {
     }
     const bufferCount = (this.currentCount % 3) + 1;
     const bufferEnd = "".padEnd(bufferCount, ".");
-    const newDisplay = this.currentText + bufferEnd;
+    let newDisplay = this.currentText;
+    if (this.countdownSeconds > 0) {
+      const elapsed = (Date.now() - this.startTimeMs) / 1000;
+      const remaining = Math.max(0, this.countdownSeconds - elapsed);
+      newDisplay += ` (${Math.ceil(remaining)}s)`;
+    }
+    newDisplay += bufferEnd;
     printLn(newDisplay);
     if (runLoop) {
       this.currentCount++;

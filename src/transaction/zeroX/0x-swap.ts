@@ -53,6 +53,7 @@ import {
 import { getTransactionGasDetails } from "../private/private-tx";
 import { getCurrentEthersWallet } from "../../wallet/public-utils";
 import { CustomGasEstimate, GasSpeed } from "../../models/gas-models";
+import { promiseTimeout } from "../../util/util";
 
 export const updateApiKey = () => {
   const zeroXApiKey = configDefaults.apiKeys.zeroXApi;
@@ -333,8 +334,12 @@ export const getProvedZer0XSwapTransaction = async (
   const chainName = getCurrentNetwork();
   const railgunWalletID = getCurrentRailgunID();
   const txIDVersion = TXIDVersion.V2_PoseidonMerkle;
+  const proofTimeoutMs = configDefaults.engine.proofTimeoutSeconds * 1000;
 
-  const progressBar = new ProgressBar("Starting Proof Generation");
+  const progressBar = new ProgressBar(
+    "Starting Proof Generation",
+    configDefaults.engine.proofTimeoutSeconds,
+  );
   const progressCallback = (progress: number, progressStats: string) => {
     if (isDefined(progressStats)) {
       progressBar.updateProgress(
@@ -363,24 +368,41 @@ export const getProvedZer0XSwapTransaction = async (
   const sendWithPublicWallet =
     typeof broadcasterFeeERC20Recipient !== "undefined" ? false : true;
   try {
-    await generateCrossContractCallsProof7702(
-      txIDVersion,
-      chainName,
-      railgunWalletID,
-      encryptionKey,
-      relayAdaptUnshieldERC20Amounts,
-      [],
-      relayAdaptShieldERC20Addresses,
-      [],
-      crossContractCalls,
-      broadcasterFeeERC20Recipient,
-      sendWithPublicWallet,
-      overallBatchMinGasPrice,
-      minGasLimit,
-      progressCallback,
-    ).finally(() => {
-      progressBar.complete();
-    });
+    await promiseTimeout(
+      generateCrossContractCallsProof7702(
+        txIDVersion,
+        chainName,
+        railgunWalletID,
+        encryptionKey,
+        relayAdaptUnshieldERC20Amounts,
+        [],
+        relayAdaptShieldERC20Addresses,
+        [],
+        crossContractCalls,
+        broadcasterFeeERC20Recipient,
+        sendWithPublicWallet,
+        overallBatchMinGasPrice,
+        minGasLimit,
+        progressCallback,
+      ),
+      proofTimeoutMs,
+    )
+      .catch((err) => {
+        const message = (err as Error).message ?? String(err);
+        if (message.startsWith("TIMEOUT:")) {
+          console.log(
+            `Proof generation timed out after ${configDefaults.engine.proofTimeoutSeconds}s. ` +
+            `This usually means the POI server is unreachable or proof computation is too slow. ` +
+            `Try again or increase proofTimeoutSeconds in your config.`,
+          );
+        } else {
+          console.log(`Proof generation error: ${message}`);
+        }
+        throw err;
+      })
+      .finally(() => {
+        progressBar.complete();
+      });
 
     const { transaction, nullifiers, preTransactionPOIsPerTxidLeafPerList } =
       await populateProvedCrossContractCalls(
