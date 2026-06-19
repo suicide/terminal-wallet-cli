@@ -35,6 +35,8 @@ import {
 } from "../../network/network-util";
 import { getFeeDetailsForChain } from "../../gas/gas-util";
 import { CustomGasEstimate, GasSpeed } from "../../models/gas-models";
+import { promiseTimeout } from "../../util/util";
+import configDefaults from "../../config/config-defaults";
 
 export const getOriginalGasDetailsForPrivateTransaction = async (
   chainName: NetworkName,
@@ -268,8 +270,12 @@ export const getProvedPrivateTransaction = async (
   const chainName = getCurrentNetwork();
   const railgunWalletID = getCurrentRailgunID();
   const txIDVersion = TXIDVersion.V2_PoseidonMerkle;
+  const proofTimeoutMs = configDefaults.engine.proofTimeoutSeconds * 1000;
 
-  const progressBar = new ProgressBar("Starting Proof Generation");
+  const progressBar = new ProgressBar(
+    "Starting Proof Generation",
+    configDefaults.engine.proofTimeoutSeconds,
+  );
   const progressCallback = (progress: number, progressStats: string) => {
     if (isDefined(progressStats)) {
       progressBar.updateProgress(
@@ -293,22 +299,35 @@ export const getProvedPrivateTransaction = async (
   const showSenderAddressToRecipient = shouldShowSender();
   const proofStartTime = Date.now();
   try {
-    await generateTransferProof(
-      txIDVersion,
-      chainName,
-      railgunWalletID,
-      encryptionKey,
-      showSenderAddressToRecipient,
-      memoText,
-      erc20AmountRecipients,
-      [], // nftAmountRecipients
-      broadcasterFeeERC20Recipient,
-      sendWithPublicWallet,
-      overallBatchMinGasPrice,
-      progressCallback,
+    await promiseTimeout(
+      generateTransferProof(
+        txIDVersion,
+        chainName,
+        railgunWalletID,
+        encryptionKey,
+        showSenderAddressToRecipient,
+        memoText,
+        erc20AmountRecipients,
+        [], // nftAmountRecipients
+        broadcasterFeeERC20Recipient,
+        sendWithPublicWallet,
+        overallBatchMinGasPrice,
+        progressCallback,
+      ),
+      proofTimeoutMs,
     )
       .catch((err) => {
-        console.log("We errored out");
+        const message = (err as Error).message ?? String(err);
+        if (message.startsWith("TIMEOUT:")) {
+          console.log(
+            `Proof generation timed out after ${configDefaults.engine.proofTimeoutSeconds}s. ` +
+            `This usually means the POI server is unreachable or proof computation is too slow. ` +
+            `Try again or increase proofTimeoutSeconds in your config.`,
+          );
+        } else {
+          console.log(`Proof generation error: ${message}`);
+        }
+        throw err;
       })
       .finally(() => {
         progressBar.complete();

@@ -22,6 +22,7 @@ interface ConfigDefaults {
     keyChainPath: string;
     defaultChain: NetworkName;
     defaultNetworks: NetworkName[];
+    proofTimeoutSeconds: number;
   };
   tokenConfig: {
     [key in NetworkName]: string[];
@@ -52,6 +53,7 @@ export default {
       NetworkName.Polygon,
       NetworkName.Arbitrum,
     ],
+    proofTimeoutSeconds: 90,
   },
   tokenConfig: {
     [NetworkName.Ethereum]: [
