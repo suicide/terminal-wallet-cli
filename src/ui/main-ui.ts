@@ -625,12 +625,14 @@ export const walletBalancePoller = async () => {
     const networkName = getCurrentNetwork();
     const chain = getChainForName(networkName);
     const railgunWalletID = getCurrentRailgunID();
-    refreshBalances(chain, [railgunWalletID]);
+    await refreshBalances(chain, [railgunWalletID]);
   } catch (err) {
     console.error(`Balance poller error: ${(err as Error).message ?? err}`);
   }
   await delay(5 * 60 * 1000); // 5 minute polling delay for balance refreshes
-  walletBalancePoller();
+  walletBalancePoller().catch((err) => {
+    console.error(`Balance poller crashed: ${(err as Error).message ?? err}`);
+  });
 };
 
 export const runMainMenu = async () => {
@@ -793,7 +795,7 @@ export const runMainMenu = async () => {
       setStatusText(
         "Starting Balance Refresh. This may take some time... ".yellow,
       );
-      refreshBalances(chain, [railgunWalletID]);
+      await refreshBalances(chain, [railgunWalletID]);
       // refreshRailgunBalances(txIDVersion, chain, railgunWalletID, fullRescan);
       break;
     }
@@ -836,8 +838,9 @@ export const runMainMenu = async () => {
     }
   }
   clearConsoleBuffer();
-  runMainMenu().catch((err) => {
+  runMainMenu().catch(async (err) => {
     console.error(`Main menu error: ${(err as Error).message ?? err}`);
+    await delay(2000);
     runMainMenu();
   });
 };

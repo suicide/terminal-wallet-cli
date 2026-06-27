@@ -30,25 +30,39 @@ export type WalletManager = {
   displayPrivate: boolean;
   responsiveMenu: boolean;
   showSenderAddress: boolean;
+  lastScanError: Optional<string>;
+  lastScanProgressTimestamp: Optional<number>;
 };
 export const walletManager: WalletManager = {
   merkelScanComplete: false,
-  balanceScanComplete: false,
-  // privateBalanceCache: [],
   menuLoaded: false,
   displayPrivate: true,
   responsiveMenu: true,
   showSenderAddress: true,
+  lastScanError: undefined,
+  lastScanProgressTimestamp: undefined,
+  poiProgressEvent: undefined as any,
+  balanceScanProgress: 0,
+  latestPrivateBalanceEvents: [],
 } as any;
 
 export const getScanProgressString = () => {
+  const parts: string[] = [];
   if (
     walletManager.balanceScanProgress > 0 &&
     walletManager.balanceScanProgress !== 100
   ) {
-    return `Balance Scan Progress  |  [${walletManager.balanceScanProgress.toFixed(
-      2,
-    )}%]\n`;
+    parts.push(`Balance Scan Progress  |  [${walletManager.balanceScanProgress.toFixed(2)}%]\n`);
   }
-  return "";
+  if (walletManager.lastScanError) {
+    parts.push(`\x1b[31m${walletManager.lastScanError}\x1b[0m\n`);
+  }
+  if (
+    walletManager.lastScanProgressTimestamp &&
+    Date.now() - walletManager.lastScanProgressTimestamp > 60_000 &&
+    !walletManager.merkelScanComplete
+  ) {
+    parts.push("\x1b[33mScan may be stuck. Try restarting or switching networks.\x1b[0m\n");
+  }
+  return parts.join("");
 };

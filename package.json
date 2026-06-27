@@ -10,7 +10,7 @@
   },
   "scripts": {
     "postinstall": "patch-package",
-    "start": "node --max-old-space-size=8192 --no-warnings --experimental-specifier-resolution=node dist/main.js",
+    "start": "node --max-old-space-size=8192 --no-warnings --experimental-specifier-resolution=node --report-on-signal --report-signal=SIGABRT --report-signal=SIGSEGV dist/main.js",
     "build": "rimraf dist && tsc",
     "st2": "node --experimental-specifier-resolution=node dist/main.js",
     "circular": "madge -c src/**/*",

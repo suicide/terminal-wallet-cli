@@ -40,8 +40,9 @@ const interceptLog = {
   log: (log: string) => { appendToDebugLog("ENGINE", log); },
   error: (err: any) => {
     const message = typeof err === "string" ? err : err?.message ?? String(err ?? "");
-    console.log(message);
-    appendToDebugLog("ENGINE:ERROR", message);
+    const stack = err instanceof Error ? err.stack : undefined;
+    console.error(message);
+    appendToDebugLog("ENGINE:ERROR", stack ?? message);
   },
 };
 

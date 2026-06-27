@@ -20,12 +20,14 @@ export const merkelTreeScanCallback = async (
   callbackInfo: MerkletreeScanUpdateEvent,
 ) => {
   walletManager.balanceScanProgress = callbackInfo.progress * 100;
+  walletManager.lastScanProgressTimestamp = Date.now();
 
   if (callbackInfo.scanStatus === "Complete") {
     walletManager.merkelScanComplete = true;
+    walletManager.lastScanError = undefined;
   }
   if (callbackInfo.scanStatus === "Incomplete") {
-    rescanBalances(getCurrentNetwork());
+    await rescanBalances(getCurrentNetwork());
   }
 };
 
@@ -35,13 +37,10 @@ export const formatLatestBalancesEvent = async () => {
     walletManager.latestPrivateBalanceEvents = [];
     return;
   }
-  if (!isDefined(walletManager.latestPrivateBalanceEvents)) {
-    return;
-  }
 
   // sort into each balance bucket, only take the latest one.
   const buckets: MapType<RailgunBalancesEvent> = {};
-  for (const balanceEvent of walletManager.latestPrivateBalanceEvents) {
+  for (const balanceEvent of currentPrivateBalances) {
     buckets[balanceEvent.balanceBucket] = balanceEvent;
   }
 
@@ -70,17 +69,28 @@ export const scanBalancesCallback = async (
 
 export const latestBalancePoller = async (pollingInterval: number) => {
   await formatLatestBalancesEvent().catch((err) => {
-    setStatusText(err.message);
+    const msg = (err as Error).message ?? String(err);
+    walletManager.lastScanError = `Balance update failed: ${msg}`;
+    setStatusText(msg);
   });
   await delay(pollingInterval);
-  latestBalancePoller(pollingInterval);
+  latestBalancePoller(pollingInterval).catch((err) => {
+    const msg = `Balance poller crashed: ${(err as Error).message ?? err}`;
+    walletManager.lastScanError = msg;
+    console.error(msg);
+  });
 };
 
 export const getPOIStatusString = () => {
   const event = walletManager.poiProgressEvent;
-  const status = `POI Status: ${event.status} | TX: ${event.index}/${event.totalCount
-    } | Progress: ${event.progress.toFixed(2)}\nTxID: ${event.txid
-    }\nPOI List ID: ${event.listKey}`;
+  if (!isDefined(event)) {
+    return "POI Status: Initializing...";
+  }
+  const progress =
+    typeof event.progress === "number" ? event.progress.toFixed(2) : "0.00";
+  const status = `POI Status: ${event.status ?? "Unknown"} | TX: ${event.index ?? "?"}/${event.totalCount ?? "?"
+    } | Progress: ${progress}\nTxID: ${event.txid ?? ""
+    }\nPOI List ID: ${event.listKey ?? ""}`;
 
   return status;
 };
@@ -91,6 +101,11 @@ export const poiScanCallback = async (poiProgressEvent: POIProofProgressEvent) =
   if (poiProgressEvent.status === POIProofEventStatus.InProgress) {
     const poiStatus = getPOIStatusString();
     setStatusText(poiStatus, 15000, true);
+  }
+  if (poiProgressEvent.status === POIProofEventStatus.Error) {
+    const msg = `POI proof failed for txid ${poiProgressEvent.txid}: ${poiProgressEvent.errMessage ?? "unknown error"}`;
+    walletManager.lastScanError = msg;
+    setStatusText(msg, 30000, true);
   }
 };
 
