@@ -39,6 +39,9 @@ import {
   getWalletNames,
   shouldShowSender,
 } from "../wallet/wallet-util";
+import { ratchetEphemeralIfRelayAdapt } from "../wallet/ephemeral-util";
+import { gasFeeMatrixPrompt } from "../ui/gas-ui";
+import { clearGasFeeSelection } from "../gas/gas-fee";
 import {
   getPrivateTransactionGasEstimate,
   getProvedPrivateTransaction,
@@ -353,6 +356,10 @@ const sendBroadcastedTransaction = async (
   bgWatchRelayedTx(chainName, sendResult);
   txScanReset();
 
+  // Relay-adapt 7702 bundle was broadcast — advance to a fresh ephemeral address so the
+  // next relay-adapt call cannot reuse this one.
+  await ratchetEphemeralIfRelayAdapt(chainName, provedTransaction.transaction);
+
   return sendResult;
 };
 
@@ -374,6 +381,8 @@ const sendSelfSignedTransaction = async (
 
     bgWatchSelfSignedTx(chainName, txResult);
     txScanReset();
+    // Self-broadcast relay-adapt 7702 bundle — advance to a fresh ephemeral address.
+    await ratchetEphemeralIfRelayAdapt(chainName, innerTransaction);
     return txResult;
   } else {
     if (isDefined(provedTransaction)) {
@@ -383,6 +392,8 @@ const sendSelfSignedTransaction = async (
 
       bgWatchSelfSignedTx(chainName, txResult);
       txScanReset();
+      // Shield-base self-broadcasts the raw type-4 tx directly; ratchet after success.
+      await ratchetEphemeralIfRelayAdapt(chainName, provedTransaction);
       return txResult;
     }
   }
@@ -393,6 +404,11 @@ export const runTransactionBuilder = async (
   transactionType: RailgunTransaction,
   resultObj?: TerminalTransaction,
 ): Promise<any> => {
+  // A fresh build (no carried state) starts on default gas — clear any prior selection so
+  // a gas override from a previous transaction can never leak into this one.
+  if (!isDefined(resultObj)) {
+    clearGasFeeSelection();
+  }
   const {
     confirmAmountsDisabled,
     selections,
@@ -1190,6 +1206,7 @@ export const runTransactionBuilder = async (
             const gasEstimate = await getShieldBaseTokenGasDetails(
               chainName,
               erc20AmountRecipients[0],
+              password,
             );
             header = await getDisplayTransactions(
               selections,
@@ -1331,10 +1348,16 @@ export const runTransactionBuilder = async (
           ];
         }
 
+        // Relay-adapt flows (private swap, base-token unshield) now produce EIP-7702
+        // (type-4) bundles, so they must be broadcast by a 7702-capable broadcaster.
+        const requires7702Broadcaster =
+          transactionType === RailgunTransaction.Private0XSwap ||
+          transactionType === RailgunTransaction.UnshieldBase;
         _broadcasterSelection = await runFeeTokenSelector(
           chainName,
           amountRecipients,
           broadcasterSelection,
+          requires7702Broadcaster,
         ).catch((err) => {
           console.log(err.message);
           if (err.message === "Going back to previous menu.") {
@@ -1351,6 +1374,14 @@ export const runTransactionBuilder = async (
         if (!_bestBroadcaster) {
           _selfSignerInfo = await getSelfSignerWalletPrompt();
         }
+
+        // Pick the gas fee after the broadcaster/self-signer so the estimate below — and the
+        // broadcaster fee quote, which scales with the gas price — reflect the chosen speed.
+        // Sets the per-build override honored by getFeeDetailsForChain.
+        await gasFeeMatrixPrompt(
+          chainName,
+          privateGasEstimate?.estimatedGasDetails?.gasEstimate,
+        );
 
         // eslint-disable-next-line @typescript-eslint/switch-exhaustiveness-check
         switch (transactionType) {
@@ -1498,6 +1529,7 @@ export const runTransactionBuilder = async (
               chainName,
               erc20AmountRecipients[0],
               privateGasEstimate,
+              encryptionKey,
             );
             break;
           }

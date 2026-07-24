@@ -48,13 +48,24 @@ export const tokenSelectionPrompt = async (
   publicBalances: boolean = false,
   amountRecipients?: RailgunERC20AmountRecipient[],
   addGasToken: boolean = false,
+  // When provided, only these token addresses are offered (eg. fee tokens that a
+  // 7702-capable broadcaster actually accepts).
+  allowedTokenAddresses?: string[],
 ) => {
-  const balances = publicBalances
+  const fetchedBalances = publicBalances
     ? await getPublicERC20BalancesForChain(
         chainName,
         publicBalances && addGasToken,
       )
     : await getPrivateERC20BalancesForChain(chainName);
+
+  const balances = isDefined(allowedTokenAddresses)
+    ? fetchedBalances.filter((bal: RailgunDisplayBalance) =>
+        allowedTokenAddresses.some(
+          (address) => address.toLowerCase() === bal.tokenAddress.toLowerCase(),
+        ),
+      )
+    : fetchedBalances;
 
   if (balances.length === 0) {
     await confirmPromptCatchRetry(
@@ -134,13 +145,28 @@ export const feeTokenSelectionPrompt = async (
   chainName: NetworkName,
   publicBalances: boolean = false,
   amountRecipients: RailgunERC20AmountRecipient[],
+  // 7702 (relay-adapt) flows: only offer fee tokens that a 7702-capable broadcaster
+  // accepts, so the user is never presented a token that has no eligible broadcaster.
+  use7702: boolean = false,
 ) => {
+  let allowedTokenAddresses: string[] | undefined;
+  if (use7702) {
+    const waku = getWakuClient();
+    const chain = getChainForName(chainName);
+    const broadcasters = waku.findAllBroadcastersForChain(chain, true, true);
+    allowedTokenAddresses = [
+      ...new Set((broadcasters ?? []).map((b) => b.tokenAddress.toLowerCase())),
+    ];
+  }
+
   const selection = await tokenSelectionPrompt(
     chainName,
     "Fee Token Selection",
     false,
     publicBalances,
     amountRecipients,
+    false,
+    allowedTokenAddresses,
   );
 
   return selection;
@@ -150,6 +176,9 @@ export const runFeeTokenSelector = async (
   chainName: NetworkName,
   amountRecipients: RailgunERC20AmountRecipient[],
   currentBroadcaster?: SelectedBroadcaster,
+  // 7702 (relay-adapt) flows must only pick broadcasters that advertise 7702
+  // support, otherwise the type-4 bundle cannot be submitted.
+  use7702 = false,
 ): Promise<{ bestBroadcaster: SelectedBroadcaster } | undefined> => {
   const additionalChoices = currentBroadcaster
     ? [
@@ -196,6 +225,7 @@ export const runFeeTokenSelector = async (
               chainName,
               false,
               amountRecipients,
+              use7702,
             );
             if (!feeToken) {
               console.log("THROWING ERROR WHY?");
@@ -203,6 +233,7 @@ export const runFeeTokenSelector = async (
                 chainName,
                 amountRecipients,
                 currentBroadcaster,
+                use7702,
               );
             }
             feeTokenAddress = feeToken.tokenAddress;
@@ -215,6 +246,7 @@ export const runFeeTokenSelector = async (
               chain,
               feeTokenAddress.toLowerCase(),
               true,
+              use7702,
             );
             if (bestBroadcaster) {
               return { bestBroadcaster };
@@ -224,6 +256,7 @@ export const runFeeTokenSelector = async (
               chainName,
               amountRecipients,
               currentBroadcaster,
+              use7702,
             );
           } catch (err) {
             console.log(err);
@@ -236,7 +269,12 @@ export const runFeeTokenSelector = async (
       }
       case "clear-broadcaster-list": {
         resetBroadcasterFilters();
-        return runFeeTokenSelector(chainName, amountRecipients, undefined);
+        return runFeeTokenSelector(
+          chainName,
+          amountRecipients,
+          undefined,
+          use7702,
+        );
       }
       case "go-back": {
         throw new Error("Going back to previous menu.");

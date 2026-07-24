@@ -21,6 +21,7 @@ import {
 } from "../private/private-tx";
 import { PrivateGasEstimate } from "../../models/transaction-models";
 import { getCurrentRailgunID } from "../../wallet/wallet-util";
+import { syncEphemeralIndexOnce } from "../../wallet/ephemeral-util";
 import { getCurrentNetwork } from "../../engine/engine";
 
 export const getUnshieldBaseTokenGasEstimate = async (
@@ -32,9 +33,17 @@ export const getUnshieldBaseTokenGasEstimate = async (
   const railgunWalletID = getCurrentRailgunID();
   const txIDVersion = TXIDVersion.V2_PoseidonMerkle;
 
+  // Base-token unshield runs through the 7702 relay-adapt path; realign the ephemeral
+  // index with history once before the SDK derives the ephemeral address for this op.
+  await syncEphemeralIndexOnce(chainName, encryptionKey);
+
+  // Base-token unshield is always a 7702 (type-4) relay-adapt tx — flag it so the gas details
+  // stay Type4 (EIP-1559) instead of being downgraded to Type1 for the broadcaster, which
+  // would zero the priority fee on the populated tx.
   const gasDetailsResult = await getTransactionGasDetails(
     chainName,
     broadcasterSelection,
+    true,
   );
 
   if (!gasDetailsResult) {
@@ -127,11 +136,11 @@ export const getProvedUnshieldBaseTokenTransaction = async (
     }
   };
 
-  const {
-    broadcasterFeeERC20Recipient,
-    overallBatchMinGasPrice,
-    estimatedGasDetails,
-  } = privateGasEstimate;
+  const { broadcasterFeeERC20Recipient, estimatedGasDetails } =
+    privateGasEstimate;
+  // EIP-7702 relay-adapt does not commit an overall-batch-min-gas-price (type-4 maxFeePerGas
+  // governs pricing). A non-zero value reverts as "Gas price too low", so pin it to 0.
+  const overallBatchMinGasPrice = 0n;
 
   const sendWithPublicWallet =
     typeof broadcasterFeeERC20Recipient !== "undefined" ? false : true;

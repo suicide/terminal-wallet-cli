@@ -67,6 +67,7 @@ import { getScanProgressString, walletManager } from "../wallet/wallet-manager";
 import "colors";
 import { getStatusText, setStatusText } from "./status-ui";
 import { runRPCEditorPrompt } from "./provider-ui";
+import { runEphemeralAdminPrompt } from "./ephemeral-admin-ui";
 const { version } = require("../../package.json");
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -216,6 +217,7 @@ const runWalletToolsPrompt = async (chainName: NetworkName) => {
         name: "show-mnemonic",
         message: "Show Current Mnemonic & Index",
       },
+      { name: "ephemeral-accounts", message: "7702 Ephemeral Accounts" },
       { name: 'full-txid-rescan', message: "Full TXID Rescan" },
       { name: "full-balance-rescan", message: "Full Balance Rescan" },
       {
@@ -255,6 +257,10 @@ const runWalletToolsPrompt = async (chainName: NetworkName) => {
           console.log(walletInfo);
           await confirmPromptCatchRetry("");
         }
+        break;
+      }
+      case "ephemeral-accounts": {
+        await runEphemeralAdminPrompt(chainName);
         break;
       }
       case "full-txid-rescan": {
@@ -513,18 +519,18 @@ const getMainPrompt = (networkName: NetworkName, baseSymbol: string) => {
       {
         name: "private-transfer",
         message: `Send ${"ERC20s".cyan.bold} Privately`,
-        disabled: !remoteConfig.network[chain.id].flags?.canSendShielded
+        disabled: !remoteConfig.network[chain.id]?.flags?.canSendShielded
       },
       {
         name: "unshield-private-balances",
         message: `Unshield ${"ERC20s".cyan.bold}`,
-        disabled: !remoteConfig.network[chain.id].flags?.canUnshield
+        disabled: !remoteConfig.network[chain.id]?.flags?.canUnshield
       },
 
       {
         name: "base-unshield",
         message: `Unshield [${baseSymbol.cyan.bold}]`,
-        disabled: !remoteConfig.network[chain.id].flags?.canUnshield && !remoteConfig.network[chain.id].flags?.canRelayAdapt
+        disabled: !remoteConfig.network[chain.id]?.flags?.canUnshield && !remoteConfig.network[chain.id]?.flags?.canRelayAdapt
       },
       {
         message: ` >> ${"Public Actions".grey.bold} <<`,
@@ -533,22 +539,22 @@ const getMainPrompt = (networkName: NetworkName, baseSymbol: string) => {
       {
         name: "shield-public-balances",
         message: `Shield ${"ERC20s".cyan.bold}`,
-        disabled: !remoteConfig.network[chain.id].flags?.canShield
+        disabled: !remoteConfig.network[chain.id]?.flags?.canShield
       },
       {
         name: "base-shield",
         message: `Shield [${baseSymbol.cyan.bold}]`,
-        disabled: !remoteConfig.network[chain.id].flags?.canShield
+        disabled: !remoteConfig.network[chain.id]?.flags?.canShield
       },
       {
         name: "public-transfer",
         message: `Send ${"ERC20s".cyan.bold} Publicly`,
-        disabled: !remoteConfig.network[chain.id].flags?.canSendPublic
+        disabled: !remoteConfig.network[chain.id]?.flags?.canSendPublic
       },
       {
         name: "public-base-transfer",
         message: `Send [${baseSymbol.cyan.bold}]`,
-        disabled: !remoteConfig.network[chain.id].flags?.canSendPublic
+        disabled: !remoteConfig.network[chain.id]?.flags?.canSendPublic
       },
       {
         message: ` >> ${"0X SWAP Tools".grey.bold} <<`,
@@ -557,12 +563,12 @@ const getMainPrompt = (networkName: NetworkName, baseSymbol: string) => {
       {
         name: "private-swap",
         message: `${"Privately"} ${"SWAP"} ${"ERC20".cyan.bold} ${"Tokens"}`,
-        disabled: !remoteConfig.network[chain.id].flags?.canSwapShielded
+        disabled: !remoteConfig.network[chain.id]?.flags?.canSwapShielded
       },
       {
         name: "public-swap",
         message: `${"Publicly"} ${"SWAP"} ${"ERC20".cyan.bold} ${"Tokens"}`,
-        disabled: !remoteConfig.network[chain.id].flags?.canSwapPublic
+        disabled: !remoteConfig.network[chain.id]?.flags?.canSwapPublic
       },
       {
         message: ` >> ${"Utilities".grey.bold} <<`,

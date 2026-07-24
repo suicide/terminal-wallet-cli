@@ -38,6 +38,7 @@ import { getFeeDetailsForChain } from "../../gas/gas-util";
 export const getOriginalGasDetailsForPrivateTransaction = async (
   chainName: NetworkName,
   broadcasterSelection?: SelectedBroadcaster,
+  is7702Transaction?: boolean,
 ): Promise<PrivateGasDetails | undefined> => {
   try {
     const feeData = await getFeeDetailsForChain(chainName);
@@ -55,13 +56,20 @@ export const getOriginalGasDetailsForPrivateTransaction = async (
     let overallBatchMinGasPrice: Optional<bigint>;
     let originalGasDetails: TransactionGasDetails;
     let feeTokenInfo: ERC20Token;
+    // A 7702 (type-4) tx must keep its EIP-1559 fee fields (maxFeePerGas/maxPriorityFeePerGas)
+    // through the whole flow. The broadcaster branch below otherwise forces Type1 (gasPrice
+    // only), which drops the priority fee to 0 on the populated type-4 tx — starving the
+    // builder tip. So when this is a 7702 tx, pin Type4 regardless of broadcaster routing;
+    // broadcasterSelection still governs fee-token details and sendWithPublicWallet below.
+    const is7702 = isDefined(is7702Transaction) && is7702Transaction;
     if (broadcasterSelection) {
-      evmGasType = getEVMGasTypeForTransaction(
-        chainName,
-        false,
-      ) as EVMGasType.Type1;
+      evmGasType = is7702
+        ? EVMGasType.Type4
+        : (getEVMGasTypeForTransaction(chainName, false) as EVMGasType.Type1);
     } else {
-      evmGasType = getEVMGasTypeForTransaction(chainName, true);
+      evmGasType = is7702
+        ? EVMGasType.Type4
+        : getEVMGasTypeForTransaction(chainName, true);
       sendWithPublicWallet = true;
     }
 
@@ -78,7 +86,8 @@ export const getOriginalGasDetailsForPrivateTransaction = async (
         break;
       }
       // self relayed transactions
-      case EVMGasType.Type2: {
+      case EVMGasType.Type2:
+      case EVMGasType.Type4: {
         originalGasDetails = {
           evmGasType, // Type 2 for self-relayed transactions
           gasEstimate: 0n, // Always 0, we don't have this yet.
@@ -130,10 +139,12 @@ export const getOriginalGasDetailsForPrivateTransaction = async (
 export const getTransactionGasDetails = async (
   chainName: NetworkName,
   broadcasterSelection?: SelectedBroadcaster,
+  is7702tx?: boolean,
 ): Promise<PrivateGasDetails | undefined> => {
   const gasDetailsResult = await getOriginalGasDetailsForPrivateTransaction(
     chainName,
     broadcasterSelection,
+    is7702tx
   );
   if (!gasDetailsResult) {
     return undefined;
@@ -151,7 +162,8 @@ export const calculateSelfSignedGasEstimate = (
     case EVMGasType.Type1: {
       return estimatedGasDetails.gasPrice * gasEstimate;
     }
-    case EVMGasType.Type2: {
+    case EVMGasType.Type2:
+    case EVMGasType.Type4: {
       return estimatedGasDetails.maxFeePerGas * gasEstimate;
     }
     default: {
@@ -325,8 +337,36 @@ export const getBroadcasterTranaction = async (
   const { nullifiers, preTransactionPOIsPerTxidLeafPerList } = tx;
   const broadcasterFeesID = tx.feesID;
   const chain = getChainForName(networkName);
-  const overallBatchMinGasPrice = tx.transaction.gasPrice;
   const relayTx = getWakuTransaction();
+
+  // EIP-7702 (type-4) bundles carry a signed authorization tuple and EIP-1559 fee
+  // fields instead of a legacy gasPrice. Forward both so the broadcaster submits a
+  // TX7702 request; without them it falls back to a legacy COMMON submission and the
+  // authorization is silently dropped, so the bundle can never be broadcast.
+  const is7702Transaction = tx.transaction.type === 4;
+  const authorization = is7702Transaction
+    ? tx.transaction.authorizationList?.[0]
+    : undefined;
+  if (is7702Transaction && !isDefined(authorization)) {
+    throw new Error(
+      "7702 transaction is missing its authorization tuple; cannot broadcast.",
+    );
+  }
+  const type4FeeOverrides = is7702Transaction
+    ? {
+        // Hand the broadcaster the gas limit we already computed. Without it, the broadcaster
+        // runs its own estimateGas on the type-4 tx (which underestimates 7702 execution) and
+        // submits below RelayAdapt's `gasleft() > minGasLimit` check ("Not enough gas
+        // supplied"). This is the app's populated limit (calculateGasLimit = estimate x1.2).
+        gasLimit: tx.transaction.gasLimit,
+        maxFeePerGas: tx.transaction.maxFeePerGas,
+        maxPriorityFeePerGas: tx.transaction.maxPriorityFeePerGas,
+      }
+    : undefined;
+  const overallBatchMinGasPrice = is7702Transaction
+    ? 0n
+    : tx.transaction.gasPrice;
+
   const encryptedTransaction = await relayTx.create(
     txidVersion,
     to,
@@ -338,6 +378,8 @@ export const getBroadcasterTranaction = async (
     overallBatchMinGasPrice,
     useRelayAdapt,
     preTransactionPOIsPerTxidLeafPerList,
+    authorization,
+    type4FeeOverrides,
   );
   return encryptedTransaction;
 };
