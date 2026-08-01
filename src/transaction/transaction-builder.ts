@@ -219,11 +219,13 @@ const getDisplayTransactions = async (
       );
 
       const baseFeeMap: any = {};
-      broadcastersBase.forEach((b) => {
-        baseFeeMap[b.railgunAddress] = BigInt(b.tokenFee.feePerUnitGas);
-      });
+      if (broadcastersBase) {
+        broadcastersBase.forEach((b) => {
+          baseFeeMap[b.railgunAddress] = BigInt(b.tokenFee.feePerUnitGas);
+        });
+      }
 
-      if (broadcastersToken.length > 0) {
+      if (broadcastersToken && broadcastersToken.length > 0) {
         display.push("Available Broadcasters:".cyan);
 
         broadcastersToken.sort((a, b) => {

@@ -88,6 +88,7 @@ export const getUnshieldERC20TransactionGasEstimate = async (
   const gasDetailsResult = await getTransactionGasDetails(
     chainName,
     broadcasterSelection,
+    undefined,
     gasSpeed,
     customGasEstimate,
   );

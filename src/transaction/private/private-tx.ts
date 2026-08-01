@@ -201,6 +201,7 @@ export const getPrivateTransactionGasEstimate = async (
   const gasDetailsResult = await getTransactionGasDetails(
     chainName,
     broadcasterSelection,
+    undefined,
     gasSpeed,
     customGasEstimate,
   );

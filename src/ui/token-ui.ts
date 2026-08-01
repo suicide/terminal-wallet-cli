@@ -204,7 +204,7 @@ const runBroadcasterSelectionPrompt = async (
     use7702Only,
   );
 
-  if (broadcasters.length === 0) {
+  if (!isDefined(broadcasters) || broadcasters.length === 0) {
     return undefined;
   }
 

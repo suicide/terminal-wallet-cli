@@ -181,7 +181,7 @@ const ephemeralAdminLoop = async (
 
         // 1) Signer / fee funding — broadcaster (relayed) or self-broadcast, never assumed.
         const funding = await runFeeTokenSelector(chainName, [], undefined, true);
-        const broadcaster = funding?.bestBroadcaster;
+        const broadcaster = funding?.selectedBroadcaster;
         const fundingLabel = isDefined(broadcaster)
           ? `broadcaster (fee token ${broadcaster.tokenAddress})`
           : "self-broadcast (your public wallet pays gas)";
