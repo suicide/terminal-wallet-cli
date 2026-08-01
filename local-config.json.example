@@ -37,7 +37,6 @@
         "canRelayAdapt": true
       },
       "providers": [
-        "https://rpc.flashbots.net",
         "https://ethereum-rpc.publicnode.com",
         "https://eth.api.pocket.network",
         "https://1rpc.io/eth",
@@ -45,7 +44,6 @@
         "https://eth.meowrpc.com",
         "https://eth.blockrazor.xyz",
         "https://eth.drpc.org",
-        "https://cloudflare-eth.com",
         "https://eth-mainnet.public.blastapi.io"
       ]
     },
