@@ -10,13 +10,7 @@
     "zeroXApi": "50451a60-e839-4f7e-a971-bfef488de1cb"
   },
   "wakuPubSubTopic": "/waku/2/rs/5/1",
-  "additionalDirectPeers": [
-    "/dns4/relay-a.rootedinprivacy.com/tcp/8000/wss/p2p/16Uiu2HAmFbD2ZvAFi2j9jjDo6g4HFbQAhfjDfnTTrbyRGQRmtG7x",
-    "/dns4/relay-b.rootedinprivacy.com/tcp/8000/wss/p2p/16Uiu2HAmPtEAoPPok7VLrpNNC6t92ZQFqLndHvkdx6Fk3CxA4MaG",
-    "/dns4/client-edge.rootedinprivacy.com/tcp/8000/wss/p2p/16Uiu2HAmQdCGG5qREQCq96kucmpUVupmvLwrTRjMazPAaMTNP97A",
-    "/dns4/waku1.privatepaymaster.com/tcp/443/wss/p2p/16Uiu2HAkypTi3rsec2pkht6vUGTQHr2fkMjsACwM5hpEqEnrcyvE",
-    "/dns4/waku2.privatepaymaster.com/tcp/443/wss/p2p/16Uiu2HAmSbCr93dtYB3hAckmXKd3B5Qo7S9YoSri3exjLhGYBWfd"
-  ],
+  "additionalDirectPeers": [],
   "trustedFeeSigner": [
     "0zk1qyjyhqjdkqd9qxusgj092ppxl92plvrk3s3cna9u73h5rwt0ghxvfrv7j6fe3z53l7lrzyqw5te7ku5v8fsrpeadzvpkudgawjv9dg08htj7z3mph5kd6dw50jc",
     "0zk1qyqhtwaa9zj3ug9dmxhfedappvm509w7dr5lgadaehxz38w9u457mrv7j6fe3z53layes62mktxj5kd6reh2kxd39ds2gnpf6wphtw39y5g36lsvukeywfqa8y0",
@@ -37,16 +31,11 @@
         "canRelayAdapt": true
       },
       "providers": [
-        "https://rpc.flashbots.net",
         "https://ethereum-rpc.publicnode.com",
-        "https://eth.api.pocket.network",
-        "https://1rpc.io/eth",
-        "https://eth.merkle.io",
-        "https://eth.meowrpc.com",
-        "https://eth.blockrazor.xyz",
+        "https://eth-mainnet.public.blastapi.io",
         "https://eth.drpc.org",
         "https://cloudflare-eth.com",
-        "https://eth-mainnet.public.blastapi.io"
+        "https://eth.merkle.io"
       ]
     },
     "56": {
@@ -61,13 +50,10 @@
         "canRelayAdapt": true
       },
       "providers": [
-        "https://binance.llamarpc.com",
         "https://bsc-mainnet.public.blastapi.io",
-        "https://bsc.blockpi.network/v1/rpc/public",
+        "https://bsc-rpc.publicnode.com",
         "https://bsc.rpc.blxrbdn.com",
-        "https://bsc-dataseed4.defibit.io",
-        "https://bsc-dataseed2.binance.org",
-        "https://bsc-rpc.publicnode.com"
+        "https://bsc-dataseed2.binance.org"
       ]
     },
     "137": {
@@ -82,14 +68,10 @@
         "canRelayAdapt": true
       },
       "providers": [
-        "https://polygon.llamarpc.com",
-        "https://polygon.meowrpc.com",
-        "https://rpc-mainnet.matic.quiknode.pro",
         "https://polygon-bor.publicnode.com",
-        "https://polygon-rpc.com",
-        "https://rpc-mainnet.maticvigil.com",
         "https://1rpc.io/matic",
-        "https://polygon.drpc.org"
+        "https://polygon.drpc.org",
+        "https://rpc-mainnet.matic.quiknode.pro"
       ]
     },
     "42161": {
@@ -104,11 +86,7 @@
         "canRelayAdapt": true
       },
       "providers": [
-        "https://arbitrum-one-rpc.publicnode.com",
-        "https://public-arb-mainnet.fastnode.io",
-        "https://arb-one.api.pocket.network",
-        "https://arbitrum.meowrpc.com",
-        "https://arb1.lava.build",
+        "https://arbitrum-one.publicnode.com",
         "https://arbitrum-one.public.blastapi.io",
         "https://arb1.arbitrum.io/rpc",
         "https://arbitrum.drpc.org"
@@ -127,9 +105,6 @@
       },
       "providers": [
         "https://ethereum-sepolia-rpc.publicnode.com",
-        "https://0xrpc.io/sep",
-        "https://eth-sepolia-testnet.api.pocket.network",
-        "https://1rpc.io/sepolia",
         "https://sepolia.drpc.org"
       ]
     }
