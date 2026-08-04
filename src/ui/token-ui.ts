@@ -231,6 +231,8 @@ const runBroadcasterSelectionPrompt = async (
       name: `${index}`,
       message: `${priceFormatted} ${tokenSymbol} : 1 ${baseSymbol} -- ${getFormattedAddress(
         broadcaster.railgunAddress,
+        10,
+        8,
       )} (${reliability}%)${isCurrent ? " [current]" : ""}`,
     };
   });

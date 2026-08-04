@@ -249,7 +249,11 @@ const getDisplayTransactions = async (
 
           const priceLine = `${priceFormatted} ${tokenSymbol} : 1 ${baseSymbol}`;
 
-          const broadcasterIdentifier = getFormattedAddress(b.railgunAddress);
+          const broadcasterIdentifier = getFormattedAddress(
+            b.railgunAddress,
+            10,
+            8,
+          );
           const reliability = (b.tokenFee.reliability * 100).toFixed(0);
           const line = `${priceLine} -- ${broadcasterIdentifier} (${reliability}%)`;
 
@@ -342,7 +346,7 @@ const getDisplayTransactions = async (
   }
   if (isDefined(privateGasEstimate)) {
     const formattedBroadcasterAddress = selectedBroadcaster
-      ? getFormattedAddress(selectedBroadcaster.railgunAddress)
+      ? getFormattedAddress(selectedBroadcaster.railgunAddress, 10, 8)
       : "";
 
     const selectedBroadcasterInfo = selectedBroadcaster

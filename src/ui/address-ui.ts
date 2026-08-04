@@ -40,9 +40,13 @@ export const getPublicAddressPrompt = async (symbol: string) => {
   return undefined;
 };
 
-export const getFormattedAddress = (railgunAddress: string) => {
-  const formatted = `${railgunAddress.slice(0, 5)}...${railgunAddress.slice(
-    -5,
+export const getFormattedAddress = (
+  railgunAddress: string,
+  prefixLength = 5,
+  suffixLength = 5,
+) => {
+  const formatted = `${railgunAddress.slice(0, prefixLength)}...${railgunAddress.slice(
+    -suffixLength,
   )}`;
   return formatted;
 };
