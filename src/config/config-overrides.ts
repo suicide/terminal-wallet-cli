@@ -3,14 +3,18 @@ import {
   loadConfigForNetwork,
   remoteConfig,
   setRemoteConfig,
-} from "../network/network-util";
+} from "../railgun/network/network-util";
 import configDefaults from "./config-defaults";
+import { applyProviderOverrides } from "./config-manager";
 import {
   getProviderObjectFromURL,
   RemoteConfig,
 } from "../models/network-models";
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const { version } = require("../../package.json");
+import { createLogger } from "../platform/logger";
+
+const log = createLogger("config");
 
 export const featureFlags: Record<string, any> = {};
 
@@ -71,7 +75,9 @@ export const overrideMainConfig = async (_version: string) => {
   const effective = overrides ?? fallbackRemoteConfig;
   if (!isDefined(overrides)) {
     setRemoteConfig(fallbackRemoteConfig);
-    console.log("[remote-config] Using built-in fallback config.".grey);
+    log.warn(
+      "remote config unavailable; running on the built-in fallback (baked-in public RPCs)",
+    );
   }
 
   if (isDefined(effective.apiKeys)) {
@@ -106,24 +112,44 @@ export const overrideMainConfig = async (_version: string) => {
       }
     }
   }
+
+  // Last, so an explicitly configured provider list wins over both the baked-in
+  // defaults and whatever the remote config supplies. Dropping a dead endpoint
+  // is otherwise only possible by editing the defaults.
+  applyProviderOverrides();
 };
 
-export const versionCheck = (version: string) => {
-  console.log(("v" + version).grey);
+export type VersionVerdict =
+  | { ok: true; newer?: string }
+  | { ok: false; message: string };
+
+/**
+ * Compare the running build against the remote config's version floor.
+ *
+ * Returns a verdict rather than exiting. This is the operator's kill switch for
+ * a build with a known problem, and a config module that calls process.exit
+ * cannot be tested, cannot tear a renderer down first, and gives whatever is on
+ * screen no chance to say why it vanished. The caller decides.
+ */
+export const versionCheck = (version: string): VersionVerdict => {
+  log.debug(`version ${version}`);
 
   if (version < remoteConfig.minVersionNumber) {
-    console.log("This version is less than the minimum stable version.".bgRed);
-    console.log(
-      "DEPRECATED Version. Download @",
-      "https://www.terminal-wallet.com".bgBlue,
-    );
-    process.exit(69);
+    return {
+      ok: false,
+      message:
+        `this build (${version}) is older than the minimum supported version ` +
+        `(${remoteConfig.minVersionNumber}). Download a current build from ` +
+        `https://www.terminal-wallet.com`,
+    };
   }
   if (version < remoteConfig.currentVersionNumber) {
-    console.log(
-      "Theres a new version available!!".rainbow,
-      "Download Links:".zebra,
-      "https://www.terminal-wallet.com".bgBlue,
-    );
+    return {
+      ok: true,
+      newer:
+        `a newer version is available (${remoteConfig.currentVersionNumber}); ` +
+        `you are on ${version}. https://www.terminal-wallet.com`,
+    };
   }
+  return { ok: true };
 };

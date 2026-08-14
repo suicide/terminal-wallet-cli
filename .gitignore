@@ -2,6 +2,7 @@ node_modules
 .wallets
 .walletsV2
 .railgun.db
+.railgun.db.*
 .artifacts*
 .zKeyChains
 .yarn
@@ -11,3 +12,19 @@ build
 releases
 TODO*
 .DS_Store
+
+# vendored SDK tarballs — never commit; the published registry set is the contract
+local-deps
+# scratch / experiment trees
+custom-tmp
+.dev
+# wallet secrets and migration backups
+*.zSecret
+*.zKey.v1.bak
+twallet-crash.log
+# local wallet config — carries the operator's own RPC endpoints and keys
+twallet.config.json
+
+# Durable diagnostic log — session-local, never committed.
+terminal-wallet.log
+terminal-wallet.log.1

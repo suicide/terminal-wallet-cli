@@ -61,6 +61,8 @@ export default {
       TokenAddressEthereum.DAI,
       TokenAddressEthereum.USDC,
       TokenAddressEthereum.RAIL,
+      TokenAddressEthereum.wstETH,
+      TokenAddressEthereum.fxUSD,
     ],
     [NetworkName.BNBChain]: [
       TokenAddressBSC.BTCB,
@@ -110,8 +112,8 @@ export default {
       providers: [
         getProviderObjectFromURL("https://ethereum-rpc.publicnode.com"),
         getProviderObjectFromURL("https://eth.drpc.org"),
-        getProviderObjectFromURL("https://eth.merkle.io"),
-        getProviderObjectFromURL("https://cloudflare-eth.com"),
+        getProviderObjectFromURL("https://rpc.flashbots.net"),
+        getProviderObjectFromURL("https://eth.meowrpc.com"),
       ],
     },
     [NetworkName.Polygon]: {
