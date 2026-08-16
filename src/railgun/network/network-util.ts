@@ -11,6 +11,9 @@ import { Contract, HDNodeWallet, JsonRpcProvider, Mnemonic, Wallet } from "ether
 import { getFallbackProviderForNetwork } from "@railgun-community/wallet";
 import { RemoteConfig } from "../../models/network-models";
 import { createLogger } from "../../platform/logger";
+import { isValidRemoteConfig } from "./validate-remote-config";
+import fs from "fs";
+import path from "path";
 
 const log = createLogger("network");
 
@@ -99,6 +102,31 @@ export const setRemoteConfig = (config: RemoteConfig) => {
 export const loadConfigForNetwork = async (): Promise<
   RemoteConfig | undefined
 > => {
+  // Optional local override: a cwd-local `local-config.json` that replaces the
+  // on-chain RemoteConfig entirely.  Intended for operator debugging / fleet
+  // multiaddr injection.  If the file is missing or unparseable the function
+  // falls through to the normal on-chain fetch below.
+  const localConfigPath = path.resolve(process.cwd(), "local-config.json");
+  if (fs.existsSync(localConfigPath)) {
+    try {
+      const raw = fs.readFileSync(localConfigPath, "utf-8");
+      const parsed: unknown = JSON.parse(raw);
+      if (!isValidRemoteConfig(parsed)) {
+        log.warn(
+          "[remote-config] local-config.json is not a valid RemoteConfig — falling back to on-chain.",
+        );
+      } else {
+        log.info("[remote-config] Using local-config.json override (cwd)");
+        remoteConfig = parsed;
+        return parsed;
+      }
+    } catch (e) {
+      log.warn(
+        `[remote-config] local-config.json exists but could not be parsed — falling back to on-chain. ${(e as Error).message}`,
+      );
+    }
+  }
+
   // Remote config will be added to a single chain;
   // optional ENVIRONMENT variable REMOTE_CONFIG_RPC to an rpc on Ethereum.
   // the OFFICIAL remote-config contract address is 0x5e982525d50046A813DBf55Ae72a3E00e99fbC94
@@ -136,9 +164,15 @@ export const loadConfigForNetwork = async (): Promise<
     return undefined;
   }
   try {
-    const config = JSON.parse(raw) as RemoteConfig;
-    remoteConfig = config;
-    return config;
+    const parsed: unknown = JSON.parse(raw);
+    if (!isValidRemoteConfig(parsed)) {
+      log.error(
+        "[remote-config] On-chain config is not a valid RemoteConfig; falling back to built-in defaults.",
+      );
+      return undefined;
+    }
+    remoteConfig = parsed;
+    return parsed;
   } catch (err) {
     log.error(
       `[remote-config] Failed to parse config; falling back to built-in defaults. ${(err as Error).message}`,
