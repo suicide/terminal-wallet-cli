@@ -1,7 +1,9 @@
 ## Tooling
 
-- Use Node.js 16.x
+- Use Node.js 24+
 - Use Rust (required for building executable)
+- Optional: Nix flake dev shell (`direnv allow` or `nix develop`)
+- Optional: `just` + Podman for containerised builds
 
 ### Install Node Dependencies
 
