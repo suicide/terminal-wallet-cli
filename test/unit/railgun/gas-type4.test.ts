@@ -108,6 +108,8 @@ test("type-4 presets are 1559-shaped, not legacy", () => {
   // a field it cannot carry.
   const presets = presetsFromEstimate(EVMGasType.Type4, {
     baseFeePerGas: 10n,
+    slowest: 0n,
+    slower: 0n,
     slow: 1n,
     average: 2n,
     fast: 3n,

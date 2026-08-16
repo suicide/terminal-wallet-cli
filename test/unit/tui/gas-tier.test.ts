@@ -10,7 +10,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { parseUnits } from "ethers";
-import { parseCustomTier, feeDataForTier } from "../../../src/tui/screens/gas-tier";
+import { parseCustomTier, feeDataForTier, TIER_LABELS } from "../../../src/tui/screens/gas-tier";
 
 test("a valid pair parses to wei", () => {
   const result = parseCustomTier("30", "1.5");
@@ -58,4 +58,33 @@ test("gasPrice tracks maxFeePerGas so legacy paths honour the chosen tier", () =
   assert.equal(fee.gasPrice, parseUnits("30", "gwei"));
   assert.equal(fee.maxFeePerGas, parseUnits("30", "gwei"));
   assert.equal(fee.maxPriorityFeePerGas, parseUnits("2", "gwei"));
+});
+
+// --- five-tier label coverage ---
+
+test("TIER_LABELS covers every GasTierKey with a human-readable label", () => {
+  // Import the real labels map from the gas-tier screen and verify every tier
+  // key has a non-empty label.  If GasTierKey gains a new key and the labels
+  // map is not extended, TypeScript will error — this test makes the contract
+  // explicit at runtime as well.
+  const keys: Array<keyof typeof TIER_LABELS> = [
+    "slowest",
+    "slower",
+    "slow",
+    "average",
+    "fast",
+  ];
+  for (const key of keys) {
+    assert.ok(TIER_LABELS[key], `missing label for tier "${key}"`);
+    assert.ok(
+      TIER_LABELS[key].length > 0,
+      `empty label for tier "${key}"`,
+    );
+  }
+  // The labels include the percentile so the user knows what each tier means.
+  assert.match(TIER_LABELS.slowest, /10%/);
+  assert.match(TIER_LABELS.slower, /17%/);
+  assert.match(TIER_LABELS.slow, /25%/);
+  assert.match(TIER_LABELS.average, /50%/);
+  assert.match(TIER_LABELS.fast, /75%/);
 });

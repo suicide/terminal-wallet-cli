@@ -7,6 +7,7 @@ import {
   TokenAddressArbitrum,
   TokenAddressBSC,
   TokenAddressEthereum,
+  TokenAddressEthereumSepolia,
   TokenAddressPolygonPOS,
 } from "../models/token-models";
 import { getProviderObjectFromURL } from "../models/network-models";
@@ -96,7 +97,13 @@ export default {
       TokenAddressArbitrum.WETH,
     ],
     [NetworkName.ArbitrumGoerli_DEPRECATED]: [],
-    [NetworkName.EthereumSepolia]: [],
+    [NetworkName.EthereumSepolia]: [
+      TokenAddressEthereumSepolia.DAI,
+      TokenAddressEthereumSepolia.USDC,
+      TokenAddressEthereumSepolia.USDT,
+      TokenAddressEthereumSepolia.WBTC,
+      TokenAddressEthereumSepolia.WETH,
+    ],
     [NetworkName.PolygonMumbai_DEPRECATED]: [],
     [NetworkName.PolygonAmoy]: [],
     [NetworkName.Hardhat]: [],

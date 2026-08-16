@@ -9,6 +9,8 @@ export type CustomGasEstimate = {
   maxFeePerGas: bigint;
   maxPriorityFeePerGas: bigint;
   baseFeePerGas: bigint;
+  slowest: bigint;
+  slower: bigint;
   slow: bigint;
   average: bigint;
   fast: bigint;

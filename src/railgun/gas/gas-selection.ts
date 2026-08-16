@@ -1,8 +1,9 @@
 /**
- * Pure gas-selection helpers — turn the slow/standard/fast fee matrix
- * (gas-fee.ts) into concrete overrides and apply them to a transaction's gas,
- * respecting the chain's EVM gas type (legacy gasPrice vs EIP-1559 maxFee).
- * No IO; the matrix fetch + prompts live in ui/collect-gas.ts.
+ * Pure gas-selection helpers — turn the slowest/slower/slow/average/fast fee
+ * matrix (gas-fee.ts) into concrete overrides and apply them to a
+ * transaction's gas, respecting the chain's EVM gas type (legacy gasPrice vs
+ * EIP-1559 maxFee).  No IO; the matrix fetch + prompts live in
+ * flows/collect/gas.ts.
  */
 import {
   EVMGasType,
@@ -23,7 +24,7 @@ export type GasOverride =
     };
 
 export interface GasPreset {
-  key: "slow" | "standard" | "fast";
+  key: "slowest" | "slower" | "slow" | "average" | "fast";
   override: GasOverride;
 }
 
@@ -37,7 +38,7 @@ export const evmGasTypeForChain = (chainName: NetworkName): EVMGasType =>
 export const priceField = (o: GasOverride): bigint =>
   o.evmGasType === EVMGasType.Type2 ? o.maxFeePerGas : o.gasPrice;
 
-/** Build slow/standard/fast overrides from a fee-history estimate. */
+/** Build slowest/slower/slow/average/fast overrides from a fee-history estimate. */
 export const presetsFromEstimate = (
   evmGasType: EVMGasType,
   est: CustomGasEstimate,
@@ -62,7 +63,13 @@ export const presetsFromEstimate = (
             gasPrice: est.gasPrice,
           },
         };
-  return [mk("slow", est.slow), mk("standard", est.average), mk("fast", est.fast)];
+  return [
+    mk("slowest", est.slowest),
+    mk("slower", est.slower),
+    mk("slow", est.slow),
+    mk("average", est.average),
+    mk("fast", est.fast),
+  ];
 };
 
 /** Build a custom override from entered wei values (undefined if incomplete). */
