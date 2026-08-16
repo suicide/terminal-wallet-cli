@@ -1,9 +1,9 @@
 /**
- * Seam-based gas-speed selection. Surfaces the slow/standard/fast fee matrix
- * (plus a custom entry) at the confirm step, through the input-provider so it
- * runs natively in blessed AND legacy. Returns a concrete GasOverride, the
- * sentinel "keep" (matrix unavailable → proceed with the auto estimate), or
- * undefined (the user cancelled).
+ * Seam-based gas-speed selection. Surfaces the slowest/slower/slow/average/fast
+ * fee matrix (plus a custom entry) at the confirm step, through the
+ * input-provider so it runs natively in blessed AND legacy. Returns a concrete
+ * GasOverride, the sentinel "keep" (matrix unavailable → proceed with the auto
+ * estimate), or undefined (the user cancelled).
  */
 import { EVMGasType, NetworkName } from "@railgun-community/shared-models";
 import { formatUnits, parseUnits } from "ethers";

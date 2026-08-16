@@ -114,7 +114,7 @@ export const gasTicker = (est: CustomGasEstimate): string => {
     // Sub-gwei: keep the precision that is the whole figure down here.
     return Math.max(0.001, Number(gwei.toFixed(3))).toString();
   };
-  return `${g(est.slow)} / ${g(est.average)} / ${g(est.fast)} gwei`;
+  return `${g(est.slowest)} / ${g(est.slower)} / ${g(est.slow)} / ${g(est.average)} / ${g(est.fast)} gwei`;
 };
 
 /**

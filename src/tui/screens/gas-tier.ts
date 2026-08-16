@@ -7,8 +7,9 @@
  * the one that needs it. The caller owns clearing it, on every exit path, so a
  * tier picked for a recovery can never leak into the next transaction.
  *
- * Presents the network's slow/average/fast EIP-1559 tiers plus a custom entry,
- * with an approximate total cost per tier when a gas limit is known.
+ * Presents the network's slowest/slower/slow/average/fast EIP-1559 tiers plus
+ * a custom entry, with an approximate total cost per tier when a gas limit is
+ * known.
  */
 import { NetworkName, isDefined } from "@railgun-community/shared-models";
 import { FeeData, formatUnits, parseUnits } from "ethers";
@@ -23,7 +24,9 @@ import { tag } from "../format/tags";
 
 const gwei = (value: bigint): string => formatUnits(value, "gwei");
 
-const TIER_LABELS: Record<GasTierKey, string> = {
+export const TIER_LABELS: Record<GasTierKey, string> = {
+  slowest: "Slowest (10%)",
+  slower: "Slower  (17%)",
   slow: "Slow  (25%)",
   average: "Average (50%)",
   fast: "Fast  (75%)",

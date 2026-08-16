@@ -64,20 +64,26 @@ export const formatFeeHistory = (
 };
 
 /**
- * Priority-fee percentiles behind the slow / average / fast tiers.
+ * Priority-fee percentiles behind the slowest / slower / slow / average / fast
+ * tiers.
  *
  * The distribution of tips in a block is steeply skewed and effectively
  * bimodal: most transactions pay almost nothing, and a large cohort pays
  * whatever their wallet defaults to — 2 gwei, overwhelmingly. Measured on
  * mainnet at a 0.062 gwei base fee, the median tip per percentile ran
- * p25 0.001 · p50 0.025 · p75 0.29 · p80 0.60 · p90 1.42 · p95 2.00.
+ * p10 0.0005 · p17 0.001 · p25 0.0014 · p50 0.025 · p75 0.29 · p80 0.60
+ * · p90 1.42 · p95 2.00.
  *
  * So anything at or above p80 samples the defaults cohort rather than the
  * market, and p95 lands on exactly 2 gwei almost regardless of conditions —
- * a fixed price wearing a percentile's clothes. These three sit below that
- * cliff, and put "slow" at roughly what public trackers quote as low.
+ * a fixed price wearing a percentile's clothes. The five tiers sit below that
+ * cliff: the original develop shipped [20, 40, 60, 80, 95] for five tiers;
+ * master v2 tightened to [25, 50, 75] for three after discovering p80+
+ * samples wallet defaults. The two new lower percentiles (p10, p17) slot
+ * below the existing p25, keeping the established slow/average/fast behaviour
+ * intact while giving budget-conscious users two cheaper options.
  */
-export const REWARD_PERCENTILES = [25, 50, 75];
+export const REWARD_PERCENTILES = [10, 17, 25, 50, 75];
 
 /**
  * The smallest tip worth offering.
@@ -121,27 +127,23 @@ export const tipFloor = (baseFeePerGas: bigint): bigint => {
 };
 
 /**
- * The three tiers, from one reward-percentile column per tier. The median
+ * The five tiers, from one reward-percentile column per tier. The median
  * across sampled blocks — not the mean, which a few spike blocks drag far
  * above the fee a normal transaction needs.
- *
- * `baseFeePerGas` is required rather than defaulted: the floor is the whole
- * point of this function in quiet conditions, and a caller that omitted the
- * base fee would silently get the un-scaled floor back.
  */
 export const tiersFromRewards = (
   rewardsPerBlock: bigint[][],
-  baseFeePerGas: bigint,
-): { slow: bigint; average: bigint; fast: bigint } => {
-  const floor = tipFloor(baseFeePerGas);
+): { slowest: bigint; slower: bigint; slow: bigint; average: bigint; fast: bigint } => {
   const atPercentile = (index: number): bigint => {
     const column = median(rewardsPerBlock.map((r) => r[index]));
-    return column > floor ? column : floor;
+    return column > MIN_PRIORITY_FEE ? column : MIN_PRIORITY_FEE;
   };
   return {
-    slow: atPercentile(0),
-    average: atPercentile(1),
-    fast: atPercentile(2),
+    slowest: atPercentile(0),
+    slower: atPercentile(1),
+    slow: atPercentile(2),
+    average: atPercentile(3),
+    fast: atPercentile(4),
   };
 };
 
@@ -249,9 +251,8 @@ export const getGasEstimates = async (
     false,
     historicalBlocks,
   );
-  const { slow, average, fast } = tiersFromRewards(
+  const { slowest, slower, slow, average, fast } = tiersFromRewards(
     blocks.map((b) => b.priorityFeePerGas),
-    baseFeePerGas,
   );
 
   // The auto-default is the middle tier: the tip a normal transaction pays.
@@ -263,6 +264,8 @@ export const getGasEstimates = async (
     maxFeePerGas,
     maxPriorityFeePerGas,
     baseFeePerGas,
+    slowest,
+    slower,
     slow,
     average,
     fast,
@@ -275,6 +278,8 @@ export const getGasEstimateMatrix = (gasEstimate: CustomGasEstimate) => {
     maxFeePerGas: _maxFeePerGas,
     maxPriorityFeePerGas: _maxPriorityFeePerGas,
     baseFeePerGas,
+    slowest,
+    slower,
     slow,
     average,
     fast,
@@ -289,6 +294,16 @@ export const getGasEstimateMatrix = (gasEstimate: CustomGasEstimate) => {
       gasPrice,
       maxFeePerGas,
       maxPriorityFeePerGas,
+    },
+    slowest: {
+      gasPrice,
+      maxFeePerGas: formatUnits(maxFeeFor(slowest, baseFeePerGas), "gwei"),
+      maxPriorityFeePerGas: formatUnits(slowest, "gwei"),
+    },
+    slower: {
+      gasPrice,
+      maxFeePerGas: formatUnits(maxFeeFor(slower, baseFeePerGas), "gwei"),
+      maxPriorityFeePerGas: formatUnits(slower, "gwei"),
     },
     slow: {
       gasPrice,
@@ -311,7 +326,7 @@ export const getGasEstimateMatrix = (gasEstimate: CustomGasEstimate) => {
 
 // --- Gas-fee tiers as raw bigints, for the per-transaction gas-fee matrix prompt ---
 
-export type GasTierKey = "slow" | "average" | "fast";
+export type GasTierKey = "slowest" | "slower" | "slow" | "average" | "fast";
 
 export type GasTier = {
   key: GasTierKey;
@@ -326,13 +341,12 @@ export type GasFeeTiers = {
   tiers: GasTier[];
 };
 
-// EIP-1559 tiers from the REWARD_PERCENTILES columns of feeHistory, each floored
-// by tipFloor. maxFee = priority + base x BASE_FEE_HEADROOM_PCT.
+// EIP-1559 tiers derived from feeHistory percentiles (10/17/25/50/75). maxFee = priority + base.
 export const getGasFeeTiers = async (
   chainName: NetworkName,
 ): Promise<GasFeeTiers> => {
   const estimate = await getGasEstimates(chainName);
-  const { baseFeePerGas, gasPrice, slow, average, fast } = estimate;
+  const { baseFeePerGas, gasPrice, slowest, slower, slow, average, fast } = estimate;
   const tier = (key: GasTierKey, priority: bigint): GasTier => ({
     key,
     maxPriorityFeePerGas: priority,
@@ -342,7 +356,13 @@ export const getGasFeeTiers = async (
     chainName,
     baseFeePerGas,
     gasPrice,
-    tiers: [tier("slow", slow), tier("average", average), tier("fast", fast)],
+    tiers: [
+      tier("slowest", slowest),
+      tier("slower", slower),
+      tier("slow", slow),
+      tier("average", average),
+      tier("fast", fast),
+    ],
   };
 };
 
