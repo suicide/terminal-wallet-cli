@@ -44,7 +44,10 @@ export const getWrappedTokenBalance = async (
 
   const wrappedBalance = useGasBalance
     ? await getCurrentWalletGasBalance()
-    : getPrivateERC20BalanceForChain(chainName, wrappedInfo.wrappedAddress);
+    : getPrivateERC20BalanceForChain(
+        chainName,
+        wrappedInfo.wrappedAddress.toLowerCase(),
+      );
   const wrappedDecimals = NETWORK_CONFIG[chainName].baseToken.decimals;
   const wrappedReadableAmount: RailgunReadableAmount = {
     symbol: useGasBalance ? wrappedInfo.symbol : wrappedInfo.wrappedSymbol,
