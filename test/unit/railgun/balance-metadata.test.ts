@@ -115,3 +115,19 @@ test("an unresolved balance is not formatted, and not counted", () => {
   assert.match(feeders, /unreadable — retrying/);
   assert.match(feeders, /priv\.filter\(\(b\) => !b\.unresolved\)/);
 });
+
+test("getWrappedTokenBalance lowercases the address before cache lookup", () => {
+  // The engine reports addresses lowercased but NETWORK_CONFIG may provide
+  // checksummed (mixed-case) wrapped addresses. getPrivateERC20BalanceForChain
+  // does an exact-match key lookup, so passing a checksummed address against a
+  // lowercase cache key silently returned 0n — the wrapped-token balance
+  // disappeared from the portfolio.
+  const at = util.indexOf("export const getWrappedTokenBalance");
+  assert.ok(at > 0, "getWrappedTokenBalance is missing");
+  const body = util.slice(at, at + 800);
+  assert.match(
+    body,
+    /\.toLowerCase\(\)/,
+    "the wrapped address is not lowercased before the balance lookup",
+  );
+});
