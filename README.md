@@ -39,6 +39,33 @@
 
 <hr>
 
+# Local Configuration Override
+
+Place a `local-config.json` in the working directory (the directory from which the CLI is launched) to replace the on-chain RemoteConfig entirely at startup.
+
+### Behaviour
+
+- **Optional**: when `local-config.json` is absent, the app fetches config from the on-chain contract as usual.
+- **Complete replacement**: when present and valid, it fully replaces the on-chain RemoteConfig — it is **not** merged with on-chain values.
+- **Validation**: the file must be valid JSON matching the full `RemoteConfig` shape. A valid-JSON file with an invalid shape (wrong types, missing required fields) is rejected with a structured warning and the app falls through to the on-chain path.
+- **Provider overrides**: `twallet.config.json` provider overrides still apply later and retain their existing precedence.
+- **Empty address allow list**: the allow list remains empty (no address restriction) regardless of local config. Trusted fee signer behaviour is separate and untouched.
+
+### Example
+
+See `local-config.json.example` in the repository root. It is a full `RemoteConfig` replacement that includes operational Waku peer multiaddrs and trusted fee signer values.
+
+### Operator audit required
+
+The example file contains **real public Waku multiaddrs and trusted fee signer keys**. Before using it in any environment:
+
+1. **Review all `additionalDirectPeers` entries** — verify the multiaddrs point to peers you trust.
+2. **Review all `trustedFeeSigner` entries** — verify the keys belong to signers you intend to trust.
+3. **Remove or replace** any entries you do not need or recognise.
+4. **Do not merge** the example with on-chain config — it replaces on-chain config entirely. If you only need to add peers, copy the on-chain values as a starting point and add your overrides.
+
+<hr>
+
 # Build Executable from Source:
 
 #### 1. Install Rust Dependencies

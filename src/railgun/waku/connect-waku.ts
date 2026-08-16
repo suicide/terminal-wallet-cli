@@ -158,8 +158,8 @@ export const startWakuClient = async (chainName: NetworkName) => {
     throw new Error("No Waku Client?...");
   }
   const chain = getChainForName(chainName);
-  // const peerOverrides = remoteConfig.additionalDirectPeers ?? [];
-  // broadcasterOptions.additionalDirectPeers = peerOverrides;
+  const peerOverrides = remoteConfig.additionalDirectPeers ?? [];
+  broadcasterOptions.additionalDirectPeers = peerOverrides;
   broadcasterOptions.pubSubTopic = "/waku/2/rs/5/1"; //remoteConfig.wakuPubSubTopic;
   if (isDefined(remoteConfig.trustedFeeSigner)) {
     broadcasterOptions.trustedFeeSigner = remoteConfig.trustedFeeSigner;
