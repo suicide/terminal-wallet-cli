@@ -116,7 +116,7 @@ test("type-4 presets are 1559-shaped, not legacy", () => {
     gasPrice: 99n,
     maxFeePerGas: 0n,
     maxPriorityFeePerGas: 0n,
-  } as never);
+  });
   assert.ok(presets.length > 0);
   for (const p of presets) {
     assert.equal(p.override.evmGasType, EVMGasType.Type2, "legacy preset for a type-4 tx");
@@ -132,6 +132,78 @@ test("a custom type-4 entry collects the 1559 pair", () => {
   assert.ok(o, "type-4 custom entry was rejected");
   assert.equal(o.evmGasType, EVMGasType.Type2);
   assert.equal(priceField(o), 7n);
+});
+
+// --- Network preset EIP-1559 safety ---
+
+const mkEst = (
+  baseFee: bigint,
+  gasPrice: bigint,
+  tips: { slowest?: bigint; slower?: bigint; slow?: bigint; average?: bigint; fast?: bigint } = {},
+) => ({
+  baseFeePerGas: baseFee,
+  slowest: tips.slowest ?? 0n,
+  slower: tips.slower ?? 0n,
+  slow: tips.slow ?? 0n,
+  average: tips.average ?? 0n,
+  fast: tips.fast ?? 0n,
+  gasPrice,
+  maxFeePerGas: 0n,
+  maxPriorityFeePerGas: 0n,
+});
+
+test("Type2 network preset: gasPrice ≥ baseFee → maxFee = gasPrice", () => {
+  const presets = presetsFromEstimate(EVMGasType.Type2, mkEst(10n, 25n));
+  const network = presets.find((p) => p.key === "network")!;
+  assert.ok(network, "missing network preset");
+  const o = network.override as { evmGasType: EVMGasType.Type2; maxFeePerGas: bigint; maxPriorityFeePerGas: bigint };
+  assert.equal(o.evmGasType, EVMGasType.Type2);
+  assert.equal(o.maxFeePerGas, 25n, "maxFee = gasPrice");
+  assert.equal(o.maxPriorityFeePerGas, 15n, "priority = gasPrice − baseFee");
+});
+
+test("Type2 network preset: gasPrice < baseFee → maxFee clamped to baseFee", () => {
+  const presets = presetsFromEstimate(EVMGasType.Type2, mkEst(30n, 5n));
+  const network = presets.find((p) => p.key === "network")!;
+  assert.ok(network, "missing network preset");
+  const o = network.override as { maxFeePerGas: bigint; maxPriorityFeePerGas: bigint };
+  assert.equal(o.maxFeePerGas, 30n, "clamped to baseFee");
+  assert.equal(o.maxPriorityFeePerGas, 0n, "priority = 0 when clamped");
+});
+
+test("Type4 network preset: same clamping as Type2", () => {
+  const presets = presetsFromEstimate(EVMGasType.Type4, mkEst(30n, 5n));
+  const network = presets.find((p) => p.key === "network")!;
+  assert.ok(network, "missing network preset");
+  const o = network.override as { evmGasType: EVMGasType.Type2; maxFeePerGas: bigint; maxPriorityFeePerGas: bigint };
+  assert.equal(o.evmGasType, EVMGasType.Type2);
+  assert.equal(o.maxFeePerGas, 30n, "clamped to baseFee");
+  assert.equal(o.maxPriorityFeePerGas, 0n);
+});
+
+test("Type4 network preset: gasPrice ≥ baseFee → maxFee = gasPrice", () => {
+  const presets = presetsFromEstimate(EVMGasType.Type4, mkEst(10n, 20n));
+  const network = presets.find((p) => p.key === "network")!;
+  assert.ok(network, "missing network preset");
+  const o = network.override as { maxFeePerGas: bigint; maxPriorityFeePerGas: bigint };
+  assert.equal(o.maxFeePerGas, 20n);
+  assert.equal(o.maxPriorityFeePerGas, 10n);
+});
+
+test("legacy network preset uses raw gasPrice", () => {
+  const presets = presetsFromEstimate(EVMGasType.Type0, mkEst(30n, 5n));
+  const network = presets.find((p) => p.key === "network")!;
+  assert.ok(network, "missing network preset");
+  assert.equal(network.override.evmGasType, EVMGasType.Type0);
+  assert.equal(network.override.gasPrice, 5n, "legacy uses raw gasPrice");
+});
+
+test("legacy network preset with high gasPrice", () => {
+  const presets = presetsFromEstimate(EVMGasType.Type1, mkEst(10n, 50n));
+  const network = presets.find((p) => p.key === "network")!;
+  assert.ok(network, "missing network preset");
+  assert.equal(network.override.evmGasType, EVMGasType.Type1);
+  assert.equal(network.override.gasPrice, 50n);
 });
 
 /**

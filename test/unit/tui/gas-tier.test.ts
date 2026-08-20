@@ -60,7 +60,7 @@ test("gasPrice tracks maxFeePerGas so legacy paths honour the chosen tier", () =
   assert.equal(fee.maxPriorityFeePerGas, parseUnits("2", "gwei"));
 });
 
-// --- five-tier label coverage ---
+// --- six-tier label coverage ---
 
 test("TIER_LABELS covers every GasTierKey with a human-readable label", () => {
   // Import the real labels map from the gas-tier screen and verify every tier
@@ -73,6 +73,7 @@ test("TIER_LABELS covers every GasTierKey with a human-readable label", () => {
     "slow",
     "average",
     "fast",
+    "network",
   ];
   for (const key of keys) {
     assert.ok(TIER_LABELS[key], `missing label for tier "${key}"`);
@@ -81,10 +82,13 @@ test("TIER_LABELS covers every GasTierKey with a human-readable label", () => {
       `empty label for tier "${key}"`,
     );
   }
-  // The labels include the percentile so the user knows what each tier means.
-  assert.match(TIER_LABELS.slowest, /10%/);
-  assert.match(TIER_LABELS.slower, /17%/);
-  assert.match(TIER_LABELS.slow, /25%/);
-  assert.match(TIER_LABELS.average, /50%/);
-  assert.match(TIER_LABELS.fast, /75%/);
+  // The percentile labels include the archived percentile so the user knows
+  // what each tier means.
+  assert.match(TIER_LABELS.slowest, /20%/);
+  assert.match(TIER_LABELS.slower, /40%/);
+  assert.match(TIER_LABELS.slow, /60%/);
+  assert.match(TIER_LABELS.average, /80%/);
+  assert.match(TIER_LABELS.fast, /95%/);
+  // The network tier uses eth_gasPrice.
+  assert.match(TIER_LABELS.network, /gasPrice/);
 });

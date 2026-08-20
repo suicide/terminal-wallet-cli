@@ -96,7 +96,7 @@ export const fmtAmount = (raw: string, maxFrac = 6): string => {
  * 0.001 gwei floor so tiny-but-nonzero fees never display as a misleading "0".
  */
 /**
- * The three tiers as they actually differ.
+ * The five tiers as they actually differ.
  *
  * Never rounded to whole gwei. Below about 20 gwei the whole spread between
  * slow and fast is often under a gwei, so rounding printed "14 / 14 / 14" for
@@ -106,15 +106,21 @@ export const fmtAmount = (raw: string, maxFrac = 6): string => {
  * updates; the one decimal above 100 is to bound the line.
  */
 export const gasTicker = (est: CustomGasEstimate): string => {
-  const g = (priority: bigint) => {
-    const gwei = Number(formatUnits(priority + est.baseFeePerGas, "gwei"));
+  const fmtGwei = (value: bigint): string => {
+    const gwei = Number(formatUnits(value, "gwei"));
     if (gwei <= 0) return "0";
     if (gwei >= 100) return gwei.toFixed(1);
     if (gwei >= 1) return gwei.toFixed(2);
     // Sub-gwei: keep the precision that is the whole figure down here.
     return Math.max(0.001, Number(gwei.toFixed(3))).toString();
   };
-  return `${g(est.slowest)} / ${g(est.slower)} / ${g(est.slow)} / ${g(est.average)} / ${g(est.fast)} gwei`;
+  // Five percentile tiers: total = priority + baseFee.
+  const parts = [est.slowest, est.slower, est.slow, est.average, est.fast]
+    .map((p) => fmtGwei(p + est.baseFeePerGas));
+  // Network tier: raw gasPrice — it is already the total effective gas price
+  // the node quotes; adding baseFee again would double-count.
+  parts.push(fmtGwei(est.gasPrice));
+  return parts.join(" / ") + " gwei";
 };
 
 /**

@@ -69,21 +69,15 @@ export const formatFeeHistory = (
  *
  * The distribution of tips in a block is steeply skewed and effectively
  * bimodal: most transactions pay almost nothing, and a large cohort pays
- * whatever their wallet defaults to — 2 gwei, overwhelmingly. Measured on
- * mainnet at a 0.062 gwei base fee, the median tip per percentile ran
- * p10 0.0005 · p17 0.001 · p25 0.0014 · p50 0.025 · p75 0.29 · p80 0.60
- * · p90 1.42 · p95 2.00.
- *
- * So anything at or above p80 samples the defaults cohort rather than the
- * market, and p95 lands on exactly 2 gwei almost regardless of conditions —
- * a fixed price wearing a percentile's clothes. The five tiers sit below that
- * cliff: the original develop shipped [20, 40, 60, 80, 95] for five tiers;
- * master v2 tightened to [25, 50, 75] for three after discovering p80+
- * samples wallet defaults. The two new lower percentiles (p10, p17) slot
- * below the existing p25, keeping the established slow/average/fast behaviour
- * intact while giving budget-conscious users two cheaper options.
+ * whatever their wallet defaults to — 2 gwei, overwhelmingly.  The five
+ * percentiles [20, 40, 60, 80, 95] archive the original develop setting and
+ * sample the full range from budget to premium.  Above p80 the distribution
+ * flattens into the wallet-default cohort, so p95 is a ceiling proxy rather
+ * than a fast-market signal.  A sixth user-selectable option, "Network",
+ * sources its price directly from eth_gasPrice for users who want the node's
+ * own recommendation.
  */
-export const REWARD_PERCENTILES = [10, 17, 25, 50, 75];
+export const REWARD_PERCENTILES = [20, 40, 60, 80, 95];
 
 /**
  * The smallest tip worth offering.
@@ -130,13 +124,17 @@ export const tipFloor = (baseFeePerGas: bigint): bigint => {
  * The five tiers, from one reward-percentile column per tier. The median
  * across sampled blocks — not the mean, which a few spike blocks drag far
  * above the fee a normal transaction needs.
+ *
+ * Each tier is the raw median: no universal floor is applied.  When all
+ * sampled blocks report zero for a percentile the median is 0n — a valid
+ * on-chain tip on many L2s — and the user can fall back to the "Network"
+ * option (eth_gasPrice) if a non-zero tip is preferred.
  */
 export const tiersFromRewards = (
   rewardsPerBlock: bigint[][],
 ): { slowest: bigint; slower: bigint; slow: bigint; average: bigint; fast: bigint } => {
   const atPercentile = (index: number): bigint => {
-    const column = median(rewardsPerBlock.map((r) => r[index]));
-    return column > MIN_PRIORITY_FEE ? column : MIN_PRIORITY_FEE;
+    return median(rewardsPerBlock.map((r) => r[index]));
   };
   return {
     slowest: atPercentile(0),
@@ -289,6 +287,10 @@ export const getGasEstimateMatrix = (gasEstimate: CustomGasEstimate) => {
   const maxFeePerGas = formatUnits(_maxFeePerGas, "gwei");
   const maxPriorityFeePerGas = formatUnits(_maxPriorityFeePerGas, "gwei");
 
+  // Network tier: maxFeePerGas ≥ baseFee (EIP-1559 safety), priority derived.
+  const networkMaxFee = _gasPrice > baseFeePerGas ? _gasPrice : baseFeePerGas;
+  const networkPrio = networkMaxFee - baseFeePerGas;
+
   const matrix = {
     recommended: {
       gasPrice,
@@ -320,13 +322,18 @@ export const getGasEstimateMatrix = (gasEstimate: CustomGasEstimate) => {
       maxFeePerGas: formatUnits(maxFeeFor(fast, baseFeePerGas), "gwei"),
       maxPriorityFeePerGas: formatUnits(fast, "gwei"),
     },
+    network: {
+      gasPrice,
+      maxFeePerGas: formatUnits(networkMaxFee, "gwei"),
+      maxPriorityFeePerGas: formatUnits(networkPrio, "gwei"),
+    },
   };
   return matrix;
 };
 
 // --- Gas-fee tiers as raw bigints, for the per-transaction gas-fee matrix prompt ---
 
-export type GasTierKey = "slowest" | "slower" | "slow" | "average" | "fast";
+export type GasTierKey = "slowest" | "slower" | "slow" | "average" | "fast" | "network";
 
 export type GasTier = {
   key: GasTierKey;
@@ -341,7 +348,9 @@ export type GasFeeTiers = {
   tiers: GasTier[];
 };
 
-// EIP-1559 tiers derived from feeHistory percentiles (10/17/25/50/75). maxFee = priority + base.
+// EIP-1559 tiers derived from feeHistory percentiles (20/40/60/80/95) plus a
+// "Network" option sourced from eth_gasPrice.  The percentile tiers carry the
+// 2× base-fee headroom; the network tier uses gasPrice as-is.
 export const getGasFeeTiers = async (
   chainName: NetworkName,
 ): Promise<GasFeeTiers> => {
@@ -352,6 +361,14 @@ export const getGasFeeTiers = async (
     maxPriorityFeePerGas: priority,
     maxFeePerGas: maxFeeFor(priority, baseFeePerGas),
   });
+  // Network tier: maxFeePerGas ≥ baseFee (EIP-1559 safety), priority derived.
+  const networkMaxFee = gasPrice > baseFeePerGas ? gasPrice : baseFeePerGas;
+  const networkPrio = networkMaxFee - baseFeePerGas;
+  const networkTier: GasTier = {
+    key: "network",
+    maxPriorityFeePerGas: networkPrio,
+    maxFeePerGas: networkMaxFee,
+  };
   return {
     chainName,
     baseFeePerGas,
@@ -362,6 +379,7 @@ export const getGasFeeTiers = async (
       tier("slow", slow),
       tier("average", average),
       tier("fast", fast),
+      networkTier,
     ],
   };
 };
