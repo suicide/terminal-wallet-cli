@@ -24,7 +24,7 @@ export type GasOverride =
     };
 
 export interface GasPreset {
-  key: "slowest" | "slower" | "slow" | "average" | "fast";
+  key: "slowest" | "slower" | "slow" | "average" | "fast" | "network";
   override: GasOverride;
 }
 
@@ -63,12 +63,31 @@ export const presetsFromEstimate = (
             gasPrice: est.gasPrice,
           },
         };
+
+  // Network tier: uses est.gasPrice directly — no 2× headroom on maxFee.
+  // maxFeePerGas must not fall below baseFeePerGas (EIP-1559 safety).
+  const networkMaxFee =
+    est.gasPrice > est.baseFeePerGas ? est.gasPrice : est.baseFeePerGas;
+  const networkPriority = networkMaxFee - est.baseFeePerGas;
+  const networkOverride =
+    evmGasType === EVMGasType.Type2 || evmGasType === EVMGasType.Type4
+      ? {
+          evmGasType: EVMGasType.Type2 as const,
+          maxFeePerGas: networkMaxFee,
+          maxPriorityFeePerGas: networkPriority,
+        }
+      : {
+          evmGasType: evmGasType as EVMGasType.Type0 | EVMGasType.Type1,
+          gasPrice: est.gasPrice,
+        };
+
   return [
     mk("slowest", est.slowest),
     mk("slower", est.slower),
     mk("slow", est.slow),
     mk("average", est.average),
     mk("fast", est.fast),
+    { key: "network", override: networkOverride },
   ];
 };
 

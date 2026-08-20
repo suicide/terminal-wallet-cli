@@ -3,28 +3,18 @@
  *
  * Tips in a block are steeply skewed and effectively bimodal: most pay almost
  * nothing, and a large cohort pays whatever their wallet defaults to — 2 gwei,
- * overwhelmingly. A percentile high enough to sample that cohort stops
- * measuring the market and starts reporting a constant.
+ * overwhelmingly.  The five percentiles [20, 40, 60, 80, 95] archive the
+ * original develop setting, sampling the full range from budget to premium.
  *
- * That is what happened: the tiers were p60/p80/p95, "fast" was 2.0000 gwei
- * essentially always, and the default tip was the p80 figure. A transaction
- * went out at a 0.765 gwei tip into a 0.057 gwei base fee — thirteen times the
- * gas price it needed.
- *
- * The five-tier port uses [10, 17, 25, 50, 75] — the original develop shipped
- * [20, 40, 60, 80, 95] for five tiers; master v2 tightened to [25, 50, 75] for
- * three after discovering that p80+ samples wallet defaults.  The two new lower
- * percentiles (p10, p17) slot below the existing p25, keeping the established
- * slow/average/fast behaviour intact while giving budget-conscious users two
- * cheaper options.
- *
- * The fixture below is real mainnet shape, measured at a 0.062 gwei base fee.
+ * Each tier is the raw median: no universal floor is applied.  When all
+ * sampled blocks report zero for a percentile the median is 0n, which is a
+ * valid on-chain tip on many L2s.  The user can fall back to the "Network"
+ * option (eth_gasPrice) if a non-zero tip is preferred.
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { parseUnits } from "ethers";
 import {
-  MIN_PRIORITY_FEE,
   REWARD_PERCENTILES,
   maxFeeFor,
   tiersFromRewards,
@@ -33,22 +23,12 @@ import {
 const gwei = (v: string) => parseUnits(v, "gwei");
 
 /**
- * One row per block, one column per requested percentile. Shaped like the real
- * distribution: the low percentiles are near zero, the high one is pinned to
- * the 2 gwei default. Columns are [p10, p17, p25, p50, p75] under the current
- * settings.
+ * One row per block, one column per requested percentile. Shaped like a real
+ * distribution: the low percentiles are near zero, p80 picks up the wallet
+ * defaults cohort, and p95 lands on the ~2 gwei default.
+ * Columns are [p20, p40, p60, p80, p95] under the current settings.
  */
 const rewards = (): bigint[][] =>
-  Array.from({ length: 40 }, () => [
-    gwei("0.0005"),
-    gwei("0.001"),
-    gwei("0.0014"),
-    gwei("0.05"),
-    gwei("0.3434"),
-  ]);
-
-/** The same blocks sampled at p20/p40/p60/p80/p95, as the tiers used to be. */
-const rewardsAtOldPercentiles = (): bigint[][] =>
   Array.from({ length: 40 }, () => [
     gwei("0.0005"),
     gwei("0.001"),
@@ -57,47 +37,31 @@ const rewardsAtOldPercentiles = (): bigint[][] =>
     gwei("2.0"),
   ]);
 
-test("the five reward percentiles sit below the wallet-default cohort", () => {
-  assert.deepEqual(REWARD_PERCENTILES, [10, 17, 25, 50, 75]);
-  // p80 and above sample the defaults, not the market.
-  assert.ok(
-    REWARD_PERCENTILES.every((p) => p < 80),
-    "a tier percentile reaches the 2 gwei default cohort",
-  );
+test("the five reward percentiles are [20, 40, 60, 80, 95]", () => {
+  assert.deepEqual(REWARD_PERCENTILES, [20, 40, 60, 80, 95]);
 });
 
-test("five tiers come out of the measured distribution", () => {
+test("five tiers come out of the measured distribution as raw medians", () => {
   const { slowest, slower, slow, average, fast } = tiersFromRewards(rewards());
-  assert.equal(average, gwei("0.05"));
-  assert.equal(fast, gwei("0.3434"));
-  assert.equal(slow, gwei("0.025"), "p25 is below the floor, so the floor applies");
-  // slowest and slower are below the floor in this fixture, so the floor binds
-  assert.equal(slowest, MIN_PRIORITY_FEE);
-  assert.equal(slower, MIN_PRIORITY_FEE);
+  // No floor — raw medians from the fixture.
+  assert.equal(slowest, gwei("0.0005"), "p20 median");
+  assert.equal(slower, gwei("0.001"), "p40 median");
+  assert.equal(slow, gwei("0.05"), "p60 median");
+  assert.equal(average, gwei("0.6"), "p80 median — wallet defaults cohort");
+  assert.equal(fast, gwei("2.0"), "p95 — the fixed 2 gwei default");
 });
 
 test("the five tiers are ordered and non-decreasing", () => {
   const { slowest, slower, slow, average, fast } = tiersFromRewards(rewards());
   assert.ok(slowest <= slower, "slowest is not cheaper than slower");
   assert.ok(slower <= slow, "slower is not cheaper than slow");
-  assert.ok(slow < average, "slow is not cheaper than average");
-  assert.ok(average < fast, "average is not cheaper than fast");
+  assert.ok(slow <= average, "slow is not cheaper than average");
+  assert.ok(average <= fast, "average is not cheaper than fast");
 });
 
-test("the three legacy tiers are unchanged", () => {
-  // slow/average/fast at p25/p50/p75 must produce the same values as before.
-  const { slow, average, fast } = tiersFromRewards(rewards());
-  assert.equal(slow, gwei("0.025"), "slow at p25 hits the floor");
-  assert.equal(average, gwei("0.05"), "average is the p50 median");
-  assert.equal(fast, gwei("0.3434"), "fast is the p75 median");
-});
-
-test("a market below the floor collapses slow into average", () => {
-  // Not a defect: every tier is max(percentile, floor), so when the median tip
-  // is at or under the minimum sensible one there is no cheaper option to
-  // offer. Ordering is non-decreasing by construction; separation is not
-  // guaranteed, and pretending otherwise would mean quoting a slow tier that
-  // cannot be mined.
+test("raw medians — no floor collapses any tier", () => {
+  // All percentiles below the median produce 0n medians; the raw result is
+  // 0n rather than being clamped to a floor.
   const quiet = Array.from({ length: 40 }, () => [
     gwei("0.0001"),
     gwei("0.001"),
@@ -106,48 +70,28 @@ test("a market below the floor collapses slow into average", () => {
     gwei("0.3"),
   ]);
   const { slowest, slower, slow, average, fast } = tiersFromRewards(quiet);
-  assert.equal(slowest, MIN_PRIORITY_FEE, "floor binds slowest");
-  assert.equal(slower, MIN_PRIORITY_FEE, "floor binds slower");
-  assert.equal(slow, average, "expected the floor to bind both");
+  // Raw medians — no MIN_PRIORITY_FEE floor.
+  assert.equal(slowest, gwei("0.0001"));
+  assert.equal(slower, gwei("0.001"));
+  assert.equal(slow, gwei("0.002"));
+  assert.equal(average, gwei("0.003"));
+  assert.equal(fast, gwei("0.3"));
   assert.ok(
     slowest <= slower && slower <= slow && slow <= average && average <= fast,
-    "ordering broke",
+    "ordering must hold without a floor",
   );
 });
 
-test("what the old percentiles produced, for contrast", () => {
-  // Same blocks, sampled where the tiers used to sample. "Fast" is the 2 gwei
-  // default — a fixed price wearing a percentile's clothes — and the default
-  // tip is 0.6, which against a 0.062 base fee is a 10x gas price.
-  const { average, fast } = tiersFromRewards(rewardsAtOldPercentiles());
-  assert.equal(fast, gwei("2.0"));
-  assert.equal(average, gwei("0.6"));
-  const baseFee = gwei("0.062");
-  assert.ok(
-    (average + baseFee) / baseFee >= 10n,
-    "the old default should demonstrate the overpayment it caused",
-  );
-});
-
-test("no tier is ever a zero tip", () => {
-  // A transaction offering no tip may never be mined, and a percentile can be
-  // 0 when most sampled blocks report no tip at it.
+test("all-zero blocks produce all-zero tiers", () => {
+  // When every sampled block reports no tip, the median is 0n.  This is a
+  // valid on-chain tip on many L2s; the user can fall back to "Network".
   const quiet = Array.from({ length: 40 }, () => [0n, 0n, 0n, 0n, 0n]);
   const { slowest, slower, slow, average, fast } = tiersFromRewards(quiet);
-  assert.equal(slowest, MIN_PRIORITY_FEE);
-  assert.equal(slower, MIN_PRIORITY_FEE);
-  assert.equal(slow, MIN_PRIORITY_FEE);
-  assert.equal(average, MIN_PRIORITY_FEE);
-  assert.equal(fast, MIN_PRIORITY_FEE);
-});
-
-test("the floor is what slow actually means", () => {
-  // Below the median the distribution is degenerate, not merely cheap: p25 was
-  // 0.0014 gwei against a p50 of 0.05. So in quiet conditions the floor — not
-  // the percentile — is the slow tier, and it has to be a tip that gets mined
-  // rather than the smallest a block has ever accepted.
-  assert.ok(MIN_PRIORITY_FEE >= gwei("0.02"), "too low to be trusted as slow");
-  assert.ok(MIN_PRIORITY_FEE <= gwei("0.05"), "a floor above the median is not slow");
+  assert.equal(slowest, 0n);
+  assert.equal(slower, 0n);
+  assert.equal(slow, 0n);
+  assert.equal(average, 0n);
+  assert.equal(fast, 0n);
 });
 
 test("the median across blocks, not the mean", () => {
@@ -235,4 +179,12 @@ test("the ceiling is not a price", () => {
   assert.ok(maxFeeFor(tip, base) > paid);
   // Still far below what the old p80 default cost: 0.765 tip on a 0.057 base.
   assert.ok(maxFeeFor(tip, base) < gwei("0.822"));
+});
+
+test("p95 samples the wallet-default cohort, not the fast market", () => {
+  // p95 lands on the 2 gwei default almost regardless of conditions — a fixed
+  // price wearing a percentile's clothes.  This is expected; the "Network"
+  // option gives users an alternative that reflects the node's own gas price.
+  const { fast } = tiersFromRewards(rewards());
+  assert.equal(fast, gwei("2.0"), "p95 is the wallet default, not a market signal");
 });

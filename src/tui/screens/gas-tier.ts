@@ -17,7 +17,6 @@ import { getInputProvider } from "../../core/input";
 import {
   getGasFeeTiers,
   setGasFeeSelection,
-  tipFloor,
   GasTierKey,
 } from "../../railgun/gas/gas-fee";
 import { tag } from "../format/tags";
@@ -25,11 +24,12 @@ import { tag } from "../format/tags";
 const gwei = (value: bigint): string => formatUnits(value, "gwei");
 
 export const TIER_LABELS: Record<GasTierKey, string> = {
-  slowest: "Slowest (10%)",
-  slower: "Slower  (17%)",
-  slow: "Slow  (25%)",
-  average: "Average (50%)",
-  fast: "Fast  (75%)",
+  slowest: "Slowest (20%)",
+  slower: "Slower  (40%)",
+  slow: "Slow  (60%)",
+  average: "Average (80%)",
+  fast: "Fast  (95%)",
+  network: "Network (gasPrice)",
 };
 
 export type CustomTier =
@@ -120,13 +120,8 @@ export const runGasTierPrompt = async (
   });
   choices.push({ label: tag("Keep current", "gray"), value: "keep" });
 
-  // The floor is named because it OVERRIDES the percentiles: when the measured
-  // tips fall under it every tier is quoted at the floor, and three identical
-  // prices labelled 25% / 50% / 75% otherwise look like a bug.
-  const floor = tipFloor(tiers.baseFeePerGas);
   const choice = await provider.select(
-    `Gas Fee — ${chainName}  (base fee ${gwei(tiers.baseFeePerGas)} gwei · ` +
-      `min tip ${gwei(floor)} gwei)`,
+    `Gas Fee — ${chainName}  (base fee ${gwei(tiers.baseFeePerGas)} gwei)`,
     choices,
   );
   if (!isDefined(choice) || choice === "keep") {

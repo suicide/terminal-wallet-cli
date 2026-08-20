@@ -236,7 +236,7 @@ export const runDeck = async (): Promise<void> => {
       render: () => {
         const estimate = feeders.gasEstimate();
         return [
-          tag("slowest · slower · slow · avg · fast", "gray"),
+          tag("slowest · slower · slow · avg · fast · network", "gray"),
           estimate ? tag(gasTicker(estimate), "magenta") : tag("—", "gray"),
           tag("click → update", "gray"),
         ].join("\n");
