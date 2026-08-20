@@ -18,7 +18,7 @@ import {
   generateTransferProof,
   populateProvedTransfer,
 } from "@railgun-community/wallet";
-import { parseUnits, formatUnits } from "ethers";
+import { formatUnits } from "ethers";
 import { getTokenInfo } from "../../balance/token-util";
 import { getCurrentRailgunID, shouldShowSender } from "../../wallet/wallet-util";
 import { getCurrentNetwork } from "../../engine/engine";
@@ -33,6 +33,7 @@ import {
   getWrappedTokenInfoForChain,
 } from "../../network/network-util";
 import { getFeeDetailsForChain } from "../../gas/gas-util";
+import { tipFloor, getGasEstimates } from "../../gas/gas-fee";
 import { unbufferGasLimit } from "../../gas/gas-selection";
 import { emitCoreEvent } from "../../../core/events";
 import { createLogger } from "../../../platform/logger";
@@ -51,8 +52,20 @@ export const getOriginalGasDetailsForPrivateTransaction = async (
     }
     const gasPrice = feeData.gasPrice ?? 0n;
     const maxFeePerGas = feeData.maxFeePerGas ?? feeData.gasPrice ?? 0n;
+    // The tip, when the fee source did not supply one.
+    //
+    // Falling back to `maxFeePerGas` offered the whole CEILING as the tip —
+    // which carries BASE_FEE_HEADROOM_PCT of base-fee headroom, so it bid
+    // several times the going rate — and the `parseUnits("1", "gwei")` behind
+    // it was unreachable, `maxFeePerGas` being non-nullable by this point. When
+    // the chain reported no gas price at all it inverted instead, offering a
+    // zero tip that no block will include.
+    //
+    // A ceiling is not a tip. `gasPrice` is base fee plus a small tip, so it
+    // stands in for the base fee here, and `tipFloor` turns it into a tip that
+    // is neither zero nor the whole ceiling.
     const maxPriorityFeePerGas =
-      feeData.maxPriorityFeePerGas ?? maxFeePerGas ?? parseUnits("1", "gwei");
+      feeData.maxPriorityFeePerGas ?? tipFloor(gasPrice);
     let evmGasType;
     let sendWithPublicWallet = false;
     let feeTokenDetails: Optional<FeeTokenDetails>;
@@ -360,15 +373,55 @@ export const getBroadcasterTranaction = async (
   }
   const type4FeeOverrides = is7702Transaction
     ? {
-        // The measured estimate, not the padded limit. The SDK writes
-        // calculateGasLimit(estimate) — estimate x1.2 — onto the transaction, and
-        // quoting a broadcaster on padded gas overprices the fee it charges. The
-        // client requires the field, so it is un-padded rather than omitted.
+        // The measured estimate, not the padded limit the SDK wrote.
+        //
+        // The broadcaster applies calculateGasLimit's 1.2x itself before
+        // submitting, so this is the figure it pads rather than the figure it
+        // submits. Forwarding the already-padded limit compounds to 1.44x,
+        // while the fee committed inside the proof —
+        // `feePerUnitGas x calculateGasLimit(gasEstimate) x maxFeePerGas` —
+        // only ever covers 1.2x. That asks a broadcaster to submit with more
+        // gas than it was paid for, which it is entitled to refuse.
+        //
+        // Measured on two mainnet sends: against the un-padded estimate, gas
+        // used came to 95.3% and 98.5% of it. Against the padded one it would
+        // read as 79.4% and 82.1%, which would make the SDK's estimator
+        // systematically 20% loose for no reason. The tighter figure is the
+        // real one, and it is what the broadcaster is padding.
         gasLimit: unbufferGasLimit(BigInt(tx.transaction.gasLimit)),
         maxFeePerGas: tx.transaction.maxFeePerGas,
         maxPriorityFeePerGas: tx.transaction.maxPriorityFeePerGas,
       }
     : undefined;
+  // The submitted fee fields, against the base fee AS OF NOW rather than as of
+  // the estimate. Everything above is decided before proving; this is the first
+  // point at which the delay proving cost is observable, and a ceiling that no
+  // longer clears the base fee is refused by the broadcaster with an error that
+  // does not say which of the two figures was wrong.
+  if (is7702Transaction) {
+    try {
+      const { baseFeePerGas } = await getGasEstimates(networkName);
+      const ceiling = BigInt(tx.transaction.maxFeePerGas ?? 0n);
+      const tip = BigInt(tx.transaction.maxPriorityFeePerGas ?? 0n);
+      const line =
+        `7702 submit: gasLimit=${BigInt(tx.transaction.gasLimit)} ` +
+        `maxFee=${formatUnits(ceiling, "gwei")}gwei ` +
+        `tip=${formatUnits(tip, "gwei")}gwei ` +
+        `baseFee(now)=${formatUnits(baseFeePerGas, "gwei")}gwei`;
+      if (ceiling < baseFeePerGas + tip) {
+        log.warn(
+          `${line} — CEILING IS UNDER base+tip; the broadcaster will refuse ` +
+            `this. The base fee rose while the proof was generated.`,
+        );
+      } else {
+        log.info(line);
+      }
+    } catch (err) {
+      // Diagnostics must never be why a send fails.
+      log.debug(`7702 submit: could not read the current base fee (${String(err)})`);
+    }
+  }
+
   const overallBatchMinGasPrice = is7702Transaction
     ? 0n
     : tx.transaction.gasPrice;

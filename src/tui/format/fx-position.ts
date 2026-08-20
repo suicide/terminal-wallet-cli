@@ -10,6 +10,10 @@
 import { FxRisk, FxRiskZone } from "../../railgun/transaction/fx/risk";
 import { FxPositionState } from "../../railgun/transaction/fx/position-state";
 import { tag } from "./tags";
+import {
+  debtTokenForFullClose,
+  repayFromAvailable,
+} from "../../railgun/transaction/fx/full-close";
 import { asLeverage, asPercent, asUsdPrice, markedBar } from "./slider";
 
 /** Safe is green, rebalancing is a warning, liquidation is not. */
@@ -104,6 +108,13 @@ export const fxPositionSummary = (
   // render as an empty, healthy one — that is an invitation to borrow against
   // collateral that may not be there.
   if (!state) return "could not read this position";
+  // Emptied. The pool never burns a position NFT — closing zeroes both legs
+  // and the NFT stays held. Zero debt at zero collateral would otherwise
+  // render as a perfectly healthy position at 0.0% — the most reassuring row on
+  // the screen, for something with nothing in it.
+  if (state.collateralAmount === 0n && state.debtAmount === 0n) {
+    return "emptied — nothing left in it";
+  }
   const wad = Number(10n ** 18n);
   const ratio = Number(state.debtRatio) / wad;
   const rebalance = Number(state.rebalanceDebtRatio) / wad;
@@ -158,6 +169,27 @@ export const fxPositionDetailLines = (
       tag("figures are shown rather than figures that would look healthy.", "gray"),
     ];
   }
+  if (state.collateralAmount === 0n && state.debtAmount === 0n) {
+    return [
+      tag(label, "magenta"),
+      "",
+      tag("This position is empty.", "yellow"),
+      tag("Its debt is repaid and its collateral withdrawn. The position itself", "gray"),
+      tag("always survives a close — f(x) empties it rather than destroying it,", "gray"),
+      tag("so this is the normal end state. Nothing is owed or at risk.", "gray"),
+      "",
+      tag("Keeping it costs nothing, and Manage can top it up and borrow", "gray"),
+      tag("against it again rather than minting a new one.", "gray"),
+      "",
+      // The trade is real and only the user can weigh it, so both halves are
+      // stated rather than one recommended. The id is the linkable part: the
+      // NFT is shielded and the executor rotates every send, but the tokenId
+      // does not, so everything done through one position is provably the same
+      // position.
+      tag("Reuse is cheaper; a fresh position is more private. This id is", "gray"),
+      tag("public, so repeated use links those actions to each other.", "gray"),
+    ];
+  }
   const wad = Number(10n ** 18n);
   const ratio = Number(state.debtRatio) / wad;
   const colour = zoneColour(
@@ -182,7 +214,7 @@ export const fxPositionDetailLines = (
     `            ${tag(`│ rebalance ${asPercent(Number(state.rebalanceDebtRatio) / wad, 0)}`, "gray")}` +
       `   ${tag(`✕ liquidation ${asPercent(Number(state.liquidationDebtRatio) / wad, 0)}`, "gray")}`,
     "",
-    tag("Manage or Close this position from the command palette.", "gray"),
+    tag("Manage, Close, or Close fully from the command palette.", "gray"),
   ];
 };
 
@@ -224,6 +256,12 @@ export interface FxCloseView {
   collateralSymbol: string;
   /** What the released collateral comes back as, when a swap is folded in. */
   receiveSymbol?: string;
+  /**
+   * RAILGUN's unshield fee, basis points. Required: defaulting it to zero would
+   * quietly restore the "equal to the debt closes it" error this exists to
+   * prevent, on the one screen the user checks before sending.
+   */
+  railgunUnshieldFeeBps: bigint;
   format: (amount: bigint, decimals: number) => string;
 }
 
@@ -240,10 +278,28 @@ export const fxCloseLines = ({
   repayAmount,
   collateralSymbol,
   receiveSymbol,
+  railgunUnshieldFeeBps,
   format,
 }: FxCloseView): string[] => {
-  const full = repayAmount >= state.debtAmount;
-  const applied = full ? state.debtAmount : repayAmount;
+  // Both fees come off before the repay lands — RAILGUN's leaving the shield,
+  // then the pool's on the repay itself — so an amount equal to the debt does
+  // NOT clear it. Comparing against the raw debt previewed "closes fully" and
+  // then built a partial, which is how a position ends up as dust nobody meant
+  // to leave behind. The threshold is the same one the build sizes against.
+  const requiredForFull = debtTokenForFullClose({
+    debt: state.debtAmount,
+    repayFeeRatio: state.repayFeeRatio,
+    railgunUnshieldFeeBps,
+  });
+  const full = repayAmount >= requiredForFull;
+  const shortfall = full ? 0n : requiredForFull - repayAmount;
+  // What actually reaches the pool, not what leaves the wallet. Quoting the
+  // gross overstated the repay and printed "leaves 0 fxUSD owed" next to a
+  // position that was still open.
+  const applied = full
+    ? state.debtAmount
+    : repayFromAvailable(repayAmount, state.repayFeeRatio, railgunUnshieldFeeBps);
+  const owed = state.debtAmount - applied;
   // Collateral is released in proportion to the debt cleared. Exact for a full
   // close; for a partial one the protocol's own accounting is the authority
   // and this is the shape of the answer, not the answer.
@@ -257,21 +313,45 @@ export const fxCloseLines = ({
 
   const lines = [
     full
-      ? tag("closes the position fully — #id is burnt", "yellow")
-      : tag(
-          `partial — leaves ${format(state.debtAmount - applied, 18)} fxUSD owed`,
-          "gray",
+      ? // NOT "burnt". Measured on mainnet: tx 0x73d732bc… sent f(x)'s own
+        // full-close sentinel on both legs, succeeded, and left the position at
+        // 0/0 with ownerOf still returning the RAILGUN proxy. The pool empties
+        // a position; it never destroys the NFT. Saying otherwise told users
+        // their position would disappear and then left it on the screen.
+        tag("clears the debt and takes the collateral back — the position is kept, empty", "yellow")
+      : // Not gray. A partial close leaves a live position accruing interest
+        // that can still be liquidated, and it is the outcome the user did not
+        // ask for — quieter than the safe one is the wrong way round.
+        //
+        // Below display precision the remainder and the shortfall both print as
+        // "0" and "<0.000001", which read as "nothing owed, nothing needed" on
+        // a line insisting the position survives. In that case name the cause
+        // and the fix instead of quoting figures too small to mean anything.
+        tag(
+          owed === 0n || format(owed, 18) === format(0n, 18)
+            ? `PARTIAL — the fees leave a dust debt behind, so the position ` +
+                `survives. Set Amount to ${format(requiredForFull, 18)} to close it outright.`
+            : `PARTIAL — leaves ${format(owed, 18)} fxUSD owed, still accruing. ` +
+                `Set Amount to ${format(requiredForFull, 18)} to close it outright.`,
+          "red",
         ),
     `${tag("repay", "gray")}  ${format(applied, 18)} fxUSD`,
     `${tag("back", "gray")}   ${format(released, state.collateralDecimals)} ${back}` +
       (full ? "" : `  ${tag("(approx — the pool settles it)", "gray")}`),
   ];
-  if (repayAmount > state.debtAmount) {
+  if (repayAmount > requiredForFull) {
     // Overshooting is not an error — the excess simply is not used — but a
-    // number larger than the debt reads as if it will be spent.
+    // number larger than the requirement reads as if it will be spent.
+    //
+    // Measured against requiredForFull, not the bare debt. The gross-up over the
+    // debt is not surplus: it is the unshield and repay fees, and it is what
+    // MAKES the close full. Against the debt this fires on every close the card
+    // prefills, printing "the rest is not used" under "clears the debt" — an
+    // instruction to lower the amount into exactly the partial close the
+    // prefill exists to prevent.
     lines.push(
       tag(
-        `only ${format(state.debtAmount, 18)} fxUSD is owed; the rest is not used`,
+        `only ${format(requiredForFull, 18)} fxUSD is needed; the rest is not used`,
         "gray",
       ),
     );

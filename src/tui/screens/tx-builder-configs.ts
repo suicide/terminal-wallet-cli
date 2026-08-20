@@ -87,13 +87,17 @@ import {
   getFxMintOpenInputs,
   isFxSupportedNetwork,
 } from "../../railgun/transaction/fx/mint";
-import { FX_ADDRESSES, KNOWN_POOLS } from "@railgun-community/cookbook";
+import { FX_ADDRESSES, KNOWN_POOLS, resolvePool } from "@railgun-community/cookbook";
 import { getFxMintCloseInputs } from "../../railgun/transaction/fx/close";
+import { getFxDustCloseInputs } from "../../railgun/transaction/fx/dust-close";
 import {
   FxAdjustAction,
   getFxMintAdjustInputs,
 } from "../../railgun/transaction/fx/adjust";
-import { getPrivateNFTsForChain } from "../../railgun/balance/balance-cache";
+import {
+  getPrivateNFTsForChain,
+  getPrivateNFTBucketsForChain,
+} from "../../railgun/balance/balance-cache";
 import { describeNFTs } from "../../railgun/balance/nft-util";
 import { fxPositionCollections } from "../../railgun/transaction/fx/position";
 import { readFxPositionState } from "../../railgun/transaction/fx/position-state";
@@ -427,7 +431,11 @@ const loadPositionChoices = async (
 ): Promise<PositionChoice[]> => {
   if (!isFxSupportedNetwork(chainName)) return [];
   const collections = fxPositionCollections();
-  const held = describeNFTs(getPrivateNFTsForChain(chainName), collections).flatMap(
+  const held = describeNFTs(
+    getPrivateNFTsForChain(chainName),
+    collections,
+    getPrivateNFTBucketsForChain(chainName),
+  ).flatMap(
     (nft) => {
       if (nft.kind !== "fx-position") return [];
       const pool = KNOWN_POOLS.find(
@@ -497,12 +505,63 @@ const previewFxOpenLegs = async (
   return defiLegs({ stepOutputs: build.steps } as never, await symbolResolver(chainName));
 };
 
+/**
+ * The whole shielded balance of the debt token goes toward the debt here.
+ *
+ * A dust close exists to finish a position off, so holding some of the debt
+ * token back would only make the swap larger than it needs to be.
+ */
+const shieldedDebtTokenFor = async (
+  chainName: NetworkName,
+  debtToken: string,
+): Promise<bigint> => {
+  const balances = await getPrivateERC20BalancesForChain(chainName);
+  const held = balances.find(
+    (b) => b.tokenAddress.toLowerCase() === debtToken.toLowerCase(),
+  );
+  return held?.amount ?? 0n;
+};
+
+const dustCloseArgs = async (
+  chainName: NetworkName,
+  s: BuilderState,
+  encryptionKey: string,
+  // Which balance funds the shortfall. The dedicated card puts it in `token`;
+  // the ordinary close puts it in `sellToken`, because there `token` is pinned
+  // to fxUSD. Same batch either way.
+  sell = s.token,
+) => {
+  if (!s.position || !sell) return undefined;
+  const pool = resolvePool(s.position.pool.name);
+  return [
+    chainName,
+    s.position.pool.name,
+    s.position.positionId,
+    await shieldedDebtTokenFor(chainName, pool.debtToken),
+    { tokenAddress: sell.tokenAddress, decimals: sell.decimals },
+    sell.amount,
+    encryptionKey,
+  ] as const;
+};
+
 const previewFxCloseLegs = async (
   chainName: NetworkName,
   s: BuilderState,
 ): Promise<DefiLeg[]> => {
   const encryptionKey = getCachedEncryptionKey();
   if (!encryptionKey || !s.position || !s.amount) return [];
+  // Preview what will actually be sent: with a sell token the batch gains a
+  // swap leg ahead of the repay, and showing the plain close would understate
+  // it by the very leg the user chose.
+  if (s.sellToken) {
+    const args = await dustCloseArgs(chainName, s, encryptionKey, s.sellToken);
+    if (!args) return [];
+    const combo = await getFxDustCloseInputs(...args);
+    return defiLegs(
+      { stepOutputs: combo.steps } as never,
+      await symbolResolver(chainName),
+    );
+  }
   const build = await getFxMintCloseInputs(
     chainName,
     s.position.pool.name,
@@ -515,6 +574,47 @@ const previewFxCloseLegs = async (
     },
   );
   return defiLegs({ stepOutputs: build.steps } as never, await symbolResolver(chainName));
+};
+
+
+
+const previewFxDustCloseLegs = async (
+  chainName: NetworkName,
+  s: BuilderState,
+): Promise<DefiLeg[]> => {
+  const encryptionKey = getCachedEncryptionKey();
+  if (!encryptionKey) return [];
+  const args = await dustCloseArgs(chainName, s, encryptionKey);
+  if (!args) return [];
+  const build = await getFxDustCloseInputs(...args);
+  return defiLegs({ stepOutputs: build.steps } as never, await symbolResolver(chainName));
+};
+
+const submitFxDustClose = async (
+  chainName: NetworkName,
+  s: BuilderState,
+): Promise<SubmitResult> => {
+  if (!s.position || !s.token) return { ok: false, error: "incomplete" };
+  const encryptionKey = await requireEncryptionKey();
+  if (!encryptionKey) return { ok: false, error: "cancelled" };
+  const args = await dustCloseArgs(chainName, s, encryptionKey);
+  if (!args) return { ok: false, error: "incomplete" };
+  const inputs = await getFxDustCloseInputs(...args);
+  return toResult(
+    await runCrossContractTransaction(
+      {
+        // The same kind of transaction as an ordinary close — relay-adapt,
+        // proved, 7702 — so it reuses the type rather than inventing one the
+        // capability matrix would have to learn about.
+        type: RailgunTransaction.FxMintClose,
+        chainName,
+        inputs,
+        encryptionKey,
+        fee: s.fee ?? resolveDefaultFee(),
+      },
+      applyGasDetailsConfirm(s.gas, legsView(s)),
+    ),
+  );
 };
 
 /** The four adjust actions, as builder cards. Same shape, different deltas. */
@@ -685,16 +785,27 @@ const submitFxMintClose = async (
   if (!s.position || !s.amount) return { ok: false, error: "incomplete" };
   const encryptionKey = await requireEncryptionKey();
   if (!encryptionKey) return { ok: false, error: "cancelled" };
-  // The amount is the fxUSD put toward the debt; how much of it can actually be
-  // repaid after both fees is the recipe's arithmetic, not the form's.
-  const shieldedFxUSD = parseUnits(s.amount, 18);
-  const inputs = await getFxMintCloseInputs(
-    chainName,
-    s.position.pool.name,
-    s.position.positionId,
-    shieldedFxUSD,
-    encryptionKey,
-  );
+  // Short of the debt token, and a token picked to cover it: the difference is
+  // bought inside THIS batch rather than in a second transaction. The swap
+  // output feeds the repay directly — nothing is re-shielded on the way
+  // through — so it costs one proof and one broadcaster fee, not two.
+  let inputs;
+  if (s.sellToken) {
+    const args = await dustCloseArgs(chainName, s, encryptionKey, s.sellToken);
+    if (!args) return { ok: false, error: "incomplete" };
+    inputs = await getFxDustCloseInputs(...args);
+  } else {
+    // The amount is the fxUSD put toward the debt; how much of it can actually
+    // be repaid after both fees is the recipe's arithmetic, not the form's.
+    const shieldedFxUSD = parseUnits(s.amount, 18);
+    inputs = await getFxMintCloseInputs(
+      chainName,
+      s.position.pool.name,
+      s.position.positionId,
+      shieldedFxUSD,
+      encryptionKey,
+    );
+  }
   return toResult(
     await runCrossContractTransaction(
       {
@@ -1284,14 +1395,35 @@ export const txBuilderConfigs: Record<
     chainName,
     verb: "Close",
     // The amount is fxUSD put toward the debt: enough covers it and the
-    // position is burnt, less makes it a partial close.
+    // position is emptied, less makes it a partial close. The NFT survives
+    // either way — f(x) does not burn positions.
     // The buy token is what the released collateral comes back AS; naming the
     // collateral itself means no swap. The debt is always repaid in fxUSD —
     // the cookbook's close combo swaps on the way out only.
-    fields: ["position", "amount", "buyToken", "fee", "gas"],
+    fields: ["position", "amount", "sellToken", "buyToken", "fee", "gas"],
+    // Both are optional, for different reasons. The buy token CONVERTS the
+    // released collateral; leaving it unset means the collateral comes back as
+    // itself, which is what most closes want, and requiring it blocked a close
+    // that was otherwise ready to send. The sell token only matters when the
+    // shielded fxUSD does not cover the close — which the round trip makes
+    // common — and it is asked for at that point rather than up front.
+    optionalFields: ["buyToken", "sellToken"],
     amountIsPositionDebt: true,
     loadPositions: () => loadPositionChoices(chainName),
     loadBuyTokens: () => loadBuyTokens(chainName),
+    // The pools' debt tokens are excluded: they repay directly and need no
+    // swap. The pool's own collateral is deliberately NOT filtered — which
+    // token that is depends on the position, and this runs before one is
+    // chosen; the build rejects that pairing by name instead.
+    loadSellTokens: async () => {
+      const balances = await getPrivateERC20BalancesForChain(chainName);
+      const debtTokens = new Set(
+        KNOWN_POOLS.map((p) => p.debtToken.toLowerCase()),
+      );
+      return balances.filter(
+        (b) => b.amount > 0n && !debtTokens.has(b.tokenAddress.toLowerCase()),
+      );
+    },
     previewLegs: (s) => previewFxCloseLegs(chainName, s),
     // Only fxUSD repays an f(x) debt, so there is nothing to pick.
     fixedToken: async () => {
@@ -1305,6 +1437,39 @@ export const txBuilderConfigs: Record<
     gasUnitsHint: FXMINT_GAS_FLOOR,
     relayAdapt: true,
     submit: (s: BuilderState) => submitFxMintClose(chainName, s),
+  }),
+
+  "fx-mint-dust-close": (chainName) => ({
+    title: "Close an f(x) position outright — Privately",
+    chainName,
+    verb: "Close fully",
+    // No amount field: the whole shielded balance of the debt token goes in,
+    // and the shortfall is raised by selling the chosen token. The amount to
+    // sell is computed, since deriving it means combining two fee ratios with
+    // a swap rate — which is the thing this card exists to remove.
+    fields: ["position", "token", "fee", "gas"],
+    loadPositions: () => loadPositionChoices(chainName),
+    // Private balances with something in them, minus the pool debt tokens —
+    // those repay directly and need no swap at all.
+    //
+    // The pool's own COLLATERAL is not filtered here, deliberately. Which token
+    // that is depends on the position, and this runs before one is chosen; a
+    // blanket filter would hide WBTC while closing a wstETH pool. The build
+    // rejects that pairing with a message naming the pool instead.
+    loadTokens: async () => {
+      const balances = await getPrivateERC20BalancesForChain(chainName);
+      const debtTokens = new Set(
+        KNOWN_POOLS.map((p) => p.debtToken.toLowerCase()),
+      );
+      return balances.filter(
+        (b) => b.amount > 0n && !debtTokens.has(b.tokenAddress.toLowerCase()),
+      );
+    },
+    previewLegs: (s) => previewFxDustCloseLegs(chainName, s),
+    ...gasInfo(chainName),
+    gasUnitsHint: FXMINT_GAS_FLOOR,
+    relayAdapt: true,
+    submit: (s: BuilderState) => submitFxDustClose(chainName, s),
   }),
 
   "morpho-vault-redeem": (chainName) => ({

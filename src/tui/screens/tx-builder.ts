@@ -37,6 +37,12 @@ export interface TxBuilderConfig {
   chainName: NetworkName;
   verb: string; // "Send" | "Shield" | "Unshield" …
   fields: FieldKey[]; // editable rows, in display order
+  /**
+   * Rows that are editable but not required. Offering a choice is not the same
+   * as demanding one — the f(x) close takes a buy token to convert the released
+   * collateral, and leaving it unset simply means no conversion.
+   */
+  optionalFields?: FieldKey[];
   // Sync or async: some balance accessors read a cache and return directly.
   // The caller awaits either way.
   loadTokens?: () =>
@@ -63,6 +69,10 @@ export interface TxBuilderConfig {
   loadBuyTokens?: () =>
     | RailgunDisplayBalance[]
     | Promise<RailgunDisplayBalance[]>; // swaps: buy-token options
+  /** fx close: what may be sold to cover a shortfall in the debt token. */
+  loadSellTokens?: () =>
+    | RailgunDisplayBalance[]
+    | Promise<RailgunDisplayBalance[]>;
   /**
    * Vault flows: the vaults on offer, each already paired with the balance this
    * action would spend. Resolving the pair needs the vault's own asset/share
@@ -116,6 +126,7 @@ type Row = FieldKey | "__send" | "__cancel";
 const FIELD_LABELS: Record<FieldKey, string> = {
   token: "Token",
   buyToken: "Buy token",
+  sellToken: "Sell to cover",
   vault: "Vault",
   pool: "Pool",
   position: "Position",
@@ -199,7 +210,7 @@ export const runTxBuilder = async (
 
     const refresh = () => {
       list.setItems(rows.map(rowLabel));
-      const v = validate(cfg.fields, state);
+      const v = validate(cfg.fields, state, cfg.optionalFields);
       const line = summarize({ verb: cfg.verb, fixedAddress: cfg.fixedAddress }, state);
       summary.setContent(
         v.ok
@@ -405,6 +416,7 @@ export const runTxBuilder = async (
         // opening an editor. Named explicitly so adding a field cannot slip
         // through unhandled.
         case "buyToken":
+        case "sellToken":
         case "showSender":
           break;
         case "fee": {
@@ -421,7 +433,7 @@ export const runTxBuilder = async (
     };
 
     const trySend = async () => {
-      const v = validate(cfg.fields, state);
+      const v = validate(cfg.fields, state, cfg.optionalFields);
       if (!v.ok) {
         provider.notify(`Incomplete — need: ${v.missing.join(", ")}.`);
         return;

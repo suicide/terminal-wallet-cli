@@ -158,6 +158,24 @@ export const createModal = (
     shadow: true,
     padding: { left: 1, right: 1 },
     style: { border: { fg: accent }, label: { fg: accent } },
+    // The chrome takes clicks so the scrim underneath does not: screen.js
+    // breaks after the topmost clickable, so an unclickable box let a click on
+    // the title reach the scrim and dismiss the modal.
+    mouse: true,
+    clickable: true,
+    // CRITICAL, and the reason arrow keys died after clicking a modal's title.
+    // blessed autofocuses any clickable element on click:
+    //
+    //   screen.on('element click', el => {
+    //     if (el.clickable === true && el.options.autoFocus !== false) el.focus();
+    //   })
+    //
+    // A plain box takes focus happily and has no key handlers, so focus landed
+    // on the chrome and every arrow key went nowhere — with nothing on screen
+    // to say why. It runs AFTER the element's own click listeners, so a caller
+    // refocusing its list from `box.on("click")` was overridden a moment later
+    // and the workaround looked like it worked.
+    autoFocus: false,
   });
 
   if (opts.footer) {
@@ -257,6 +275,35 @@ export const createModal = (
   // on the already-focused input emits a blur on itself, which re-triggers the
   // keypress-listener race and double-counts keystrokes.
   const guardFocus = (el: any) => {
+    // THE OPENING CLICK IS STILL BEING DISPATCHED.
+    //
+    // A modal opened from a click — a deck card, a palette tile, a button —
+    // runs inside that element's click handler. blessed emits 'element click'
+    // AFTER the handler returns and autofocuses whatever was clicked, so the
+    // card takes the keys back the instant the modal appears: it draws, it
+    // looks focused, and the arrows go to the deck underneath. Modals opened
+    // from a keypress were fine, which is what made it look like only some
+    // dialogs were broken.
+    //
+    // Every such element now passes autoFocus:false. This re-assert is the
+    // backstop for the next one that forgets, since the symptom is silent.
+    setImmediate(() => {
+      if (!box.detached && screen.focused !== el) {
+        el.focus();
+        screen.render();
+      }
+    });
+    // Clicking the modal's own chrome — border, title, footer, empty space — is
+    // not an answer to anything it asked. Whatever owns the keys keeps them, so
+    // the arrows still work afterwards. This half applies to EVERY modal: a
+    // dismissable one is dismissed by clicking OUTSIDE, never by clicking
+    // itself.
+    box.on("click", () => {
+      if (screen.focused !== el) {
+        el.focus();
+        screen.render();
+      }
+    });
     if (dismissable && !opts.hardened) return;
     scrim.on("click", () => {
       if (screen.focused !== el) {

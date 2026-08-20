@@ -12,7 +12,13 @@
  * matters — where is this position now, and where does this action put it.
  */
 import { NetworkName } from "@railgun-community/shared-models";
-import { KNOWN_POOLS, getFxPool, getFxPosition } from "@railgun-community/cookbook";
+import { Contract } from "ethers";
+import {
+  KNOWN_POOLS,
+  getFxPool,
+  getFxPosition,
+  resolvePool,
+} from "@railgun-community/cookbook";
 import { getProviderForChain } from "../../network/network-util";
 import { createLogger } from "../../../platform/logger";
 
@@ -37,6 +43,48 @@ export interface FxPositionState {
 }
 
 /**
+ * How much of a position is left.
+ *
+ * - `live`   — a position with a meaningful amount in it
+ * - `dust`   — still OPEN, with debt still accruing, but too small to render
+ * - `empty`  — nothing in it: closed out, or an id that never existed
+ *
+ * `dust` exists because a partial close that repays almost everything leaves a
+ * residue, and a residue is not a closed position. The debt keeps accruing and
+ * the position can still be liquidated, so it must not read as finished — but
+ * it also must not read as an ordinary holding, because every figure on the row
+ * rounds to zero and the row looks broken.
+ *
+ * Scale-free on purpose. A currency threshold would need a price and a guess at
+ * what "small" means for a protocol whose positions range over several orders
+ * of magnitude. The honest definition is the one the screen already implies:
+ * if the amount cannot be shown at the precision the wallet renders, the wallet
+ * cannot tell the user anything useful about its size.
+ */
+export type FxPositionScale = "live" | "dust" | "empty";
+
+/** Decimal places the position rows render collateral at. */
+export const FX_POSITION_DP = 4n;
+
+export const fxPositionScale = (
+  state: Pick<FxPositionState, "collateralAmount" | "collateralDecimals">,
+): FxPositionScale => {
+  const { collateralAmount, collateralDecimals } = state;
+  if (collateralAmount <= 0n) return "empty";
+  // Does it survive rounding to FX_POSITION_DP places?
+  const shown =
+    (collateralAmount * 10n ** FX_POSITION_DP) /
+    10n ** BigInt(collateralDecimals);
+  return shown === 0n ? "dust" : "live";
+};
+
+/** A dust position is still open, and saying otherwise is the dangerous read. */
+export const fxScaleNote = (scale: FxPositionScale): string =>
+  scale === "dust"
+    ? "residual position — too small to show, still open and still accruing debt"
+    : "";
+
+/**
  * Read one position.
  *
  * Returns undefined rather than throwing: a management screen that cannot read
@@ -46,9 +94,11 @@ export interface FxPositionState {
  * `positionSummary`, which distinguishes them.
  *
  * `getPositionDebtRatio` returns 0 for a position that does not exist rather
- * than reverting, so a burnt or wrong id reads as a perfectly healthy position
- * with no debt. The guard is that the collateral must be non-zero too: a live
- * position always has some, and a burnt one has none.
+ * than reverting, so a wrong id reads as a perfectly healthy position with no
+ * debt. Zero collateral was once taken as proof of that — but f(x) empties a
+ * position on close rather than destroying it, so a real, held, closed-out
+ * position looks identical. `ownerOf` is what actually separates them, and it
+ * is only consulted on that zero/zero path.
  */
 export const readFxPositionState = async (
   chainName: NetworkName,
@@ -62,9 +112,34 @@ export const readFxPositionState = async (
       getFxPool(poolName as never, provider),
     ]);
     if (position.collateralAmount === 0n && position.debt === 0n) {
-      // Nothing behind it. The pool reports a nonexistent position as a
-      // zero-debt one, so this is the shape a closed or wrong id takes.
-      return undefined;
+      // Zero on both legs has two meanings and the pool reports them
+      // identically: a position that does not exist, and one that has been
+      // emptied but whose NFT is still held. A close that repays and withdraws
+      // by explicit amount reaches zero WITHOUT burning — only the pool's own
+      // full-close sentinel burns — so the second is a real state a wallet sits
+      // in, and calling it unreadable told the user their position had
+      // vanished when it was still theirs and still listed.
+      //
+      // ownerOf separates them: it reverts for a burnt or never-minted id.
+      const exists = await new Contract(
+        resolvePool(poolName as never).address,
+        ["function ownerOf(uint256) view returns (address)"],
+        provider,
+      )
+        .ownerOf(positionId)
+        .then(() => true)
+        .catch(() => false);
+      if (!exists) return undefined;
+      return {
+        collateralAmount: 0n,
+        collateralDecimals: Number(position.collateralDecimals),
+        debtAmount: 0n,
+        debtRatio: 0n,
+        rebalanceDebtRatio: pool.rebalanceDebtRatio,
+        liquidationDebtRatio: pool.liquidationDebtRatio,
+        borrowFeeRatio: pool.borrowFeeRatio,
+        repayFeeRatio: pool.repayFeeRatio,
+      };
     }
     return {
       collateralAmount: position.collateralAmount,

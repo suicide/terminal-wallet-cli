@@ -98,16 +98,45 @@ export const REWARD_PERCENTILES = [25, 50, 75];
 export const MIN_PRIORITY_FEE = parseUnits("0.025", "gwei");
 
 /**
+ * The tip floor as a percentage of the current base fee.
+ *
+ * `MIN_PRIORITY_FEE` is an absolute figure calibrated against a 0.062 gwei base
+ * fee, so it stops meaning anything once the chain is busy: at a 30 gwei base
+ * fee it is a floor of one twelve-hundredth of the base fee, which is to say no
+ * floor at all. The percentiles usually rise with the market on their own, but
+ * they are a measure of what OTHER transactions offered, and in a block where
+ * most of them are already stuck the measured tips are low precisely when a
+ * higher one is needed.
+ *
+ * Expressing the floor relative to the base fee keeps it meaningful at both
+ * ends without reintroducing the overpayment the percentiles were lowered to
+ * fix — at the base fee this was calibrated at, the absolute floor still binds.
+ */
+export const TIP_FLOOR_BASE_FEE_PCT = 25n;
+
+/** The larger of the absolute floor and the base-fee-relative one. */
+export const tipFloor = (baseFeePerGas: bigint): bigint => {
+  const scaled = (baseFeePerGas * TIP_FLOOR_BASE_FEE_PCT) / 100n;
+  return scaled > MIN_PRIORITY_FEE ? scaled : MIN_PRIORITY_FEE;
+};
+
+/**
  * The three tiers, from one reward-percentile column per tier. The median
  * across sampled blocks — not the mean, which a few spike blocks drag far
  * above the fee a normal transaction needs.
+ *
+ * `baseFeePerGas` is required rather than defaulted: the floor is the whole
+ * point of this function in quiet conditions, and a caller that omitted the
+ * base fee would silently get the un-scaled floor back.
  */
 export const tiersFromRewards = (
   rewardsPerBlock: bigint[][],
+  baseFeePerGas: bigint,
 ): { slow: bigint; average: bigint; fast: bigint } => {
+  const floor = tipFloor(baseFeePerGas);
   const atPercentile = (index: number): bigint => {
     const column = median(rewardsPerBlock.map((r) => r[index]));
-    return column > MIN_PRIORITY_FEE ? column : MIN_PRIORITY_FEE;
+    return column > floor ? column : floor;
   };
   return {
     slow: atPercentile(0),
@@ -127,18 +156,37 @@ export const tiersFromRewards = (
  * broadcaster rejects it outright: "must cover the current base fee plus a
  * minimum priority fee".
  *
- * 2x is the usual convention (ethers' own getFeeData uses it) and absorbs
- * roughly six consecutive full blocks.
- *
  * It is not free for a broadcaster send, which is why this is a named constant
- * rather than a multiplier inline. A broadcaster charges
+ * rather than a multiplier inline. A broadcaster is paid
  * `feePerUnitGas x calculateGasLimit(estimate) x maxFeePerGas` — its fee scales
- * with the CEILING, not with what the transaction ends up paying — and that fee
- * is committed inside the proof, so it cannot be recomputed later against a
- * fresher base fee. Headroom therefore buys reliability with real money, and
- * the number is a trade rather than a default.
+ * LINEARLY with the CEILING, not with what the transaction ends up paying — and
+ * that fee is committed inside the proof, so it cannot be recomputed later
+ * against a fresher base fee. Headroom buys reliability with real money.
+ *
+ * How far it goes. The broadcaster is whole while its fee covers its cost:
+ *
+ *   1.2 x (tip + H x base(estimate))  >=  base(submit) + tip
+ *
+ * the 1.2 being calculateGasLimit's padding, which it is paid on but does not
+ * spend. Ignoring the tips as small against the base fee, base(submit) may grow
+ * by 1.2H before the send is refused, and growth is capped at 12.5% per block:
+ *
+ *   H = 2  ->  2.4x  ->  ln(2.4)/ln(1.125)  =  7.4 blocks  =   89s
+ *   H = 3  ->  3.6x  ->                        10.9 blocks  =  131s
+ *   H = 4  ->  4.8x  ->                        13.3 blocks  =  160s
+ *
+ * 2x is the usual convention (ethers' getFeeData uses it) and is right for a
+ * transaction submitted immediately. It is not right here: a 7702 relay-adapt
+ * proof over a cross-contract batch regularly takes longer than 89 seconds, so
+ * the ceiling went underwater during proving and the send was refused after the
+ * user had already paid to generate it.
+ *
+ * 3x costs 50% more in broadcaster fee than 2x did and buys ~131 seconds of
+ * worst case. Worst case means CONSECUTIVE FULL BLOCKS; in ordinary conditions
+ * the base fee is flat or falling and none of this is spent. Going higher pays
+ * a permanent premium against an increasingly rare tail.
  */
-const BASE_FEE_HEADROOM_PCT = 200n;
+const BASE_FEE_HEADROOM_PCT = 300n;
 
 /**
  * The ceiling to submit for a given tip: the tip plus room for the base fee to
@@ -203,6 +251,7 @@ export const getGasEstimates = async (
   );
   const { slow, average, fast } = tiersFromRewards(
     blocks.map((b) => b.priorityFeePerGas),
+    baseFeePerGas,
   );
 
   // The auto-default is the middle tier: the tip a normal transaction pays.
@@ -277,7 +326,8 @@ export type GasFeeTiers = {
   tiers: GasTier[];
 };
 
-// EIP-1559 tiers derived from feeHistory percentiles (60/80/95). maxFee = priority + base.
+// EIP-1559 tiers from the REWARD_PERCENTILES columns of feeHistory, each floored
+// by tipFloor. maxFee = priority + base x BASE_FEE_HEADROOM_PCT.
 export const getGasFeeTiers = async (
   chainName: NetworkName,
 ): Promise<GasFeeTiers> => {

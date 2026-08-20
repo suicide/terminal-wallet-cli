@@ -21,6 +21,7 @@ import { fmtAmount } from "../format/deck";
 export type FieldKey =
   | "token"
   | "buyToken"
+  | "sellToken"
   | "vault"
   | "pool"
   | "position"
@@ -100,6 +101,15 @@ export interface RecoveryChoice {
 export interface BuilderState {
   token?: RailgunDisplayBalance; // for swaps: the SELL token
   buyToken?: RailgunDisplayBalance; // swaps: the BUY token
+  /**
+   * fx close: a token to sell for the shortfall, in the SAME batch.
+   *
+   * A close is bounded by the debt token held, and the round trip guarantees
+   * that is short — mint, shield in at 25bps, then repay at the pool fee and
+   * unshield out at another 25bps. So the ordinary close cannot fund itself,
+   * and the difference is raised here rather than in a second transaction.
+   */
+  sellToken?: RailgunDisplayBalance;
   vault?: VaultChoice; // vault flows: the vault, and the token it spends
   pool?: PoolChoice; // fx flows: the pool, and the collateral it takes
   position?: PositionChoice; // fx flows acting on a position the wallet holds
@@ -207,8 +217,15 @@ export const fieldDisplay = (key: FieldKey, s: BuilderState): string => {
       return s.token
         ? `${s.token.symbol}  (have ${formatUnits(s.token.amount, s.token.decimals)})`
         : "‹select token›";
+    case "sellToken":
+      // Only asked for when the debt token is short, so "none" is the ordinary
+      // answer rather than something left undone.
+      return s.sellToken ? s.sellToken.symbol : "‹none — not needed›";
     case "buyToken":
-      return s.buyToken ? s.buyToken.symbol : "‹select token›";
+      // Says what happens if it is left alone, because on the close it is a
+      // conversion the user may not want and "‹select token›" reads as an
+      // instruction rather than an option.
+      return s.buyToken ? s.buyToken.symbol : "‹none — no swap›";
     case "vault":
       return s.vault ? s.vault.vault.name : "‹select vault›";
     case "pool":
@@ -258,14 +275,25 @@ export interface ValidationResult {
   missing: string[];
 }
 
-/** Which required fields are still unset/invalid. */
+/**
+ * Which required fields are still unset/invalid.
+ *
+ * `optional` names fields that are editable but not required. A field can be
+ * offered without being demanded — the f(x) close takes a buy token that
+ * converts the released collateral, and leaving it unset means the collateral
+ * comes back as itself. Treating that as missing blocks a close that is
+ * otherwise ready, on a choice the user does not have to make.
+ */
 export const validate = (
   fields: FieldKey[],
   s: BuilderState,
+  optional: readonly FieldKey[] = [],
 ): ValidationResult => {
+  const required = (key: FieldKey) =>
+    fields.includes(key) && !optional.includes(key);
   const missing: string[] = [];
-  if (fields.includes("token") && !s.token) missing.push("token");
-  if (fields.includes("buyToken") && !s.buyToken) missing.push("buy token");
+  if (required("token") && !s.token) missing.push("token");
+  if (required("buyToken") && !s.buyToken) missing.push("buy token");
   if (fields.includes("vault") && !s.vault) missing.push("vault");
   if (fields.includes("pool") && !s.pool) missing.push("pool");
   if (fields.includes("position") && !s.position) missing.push("position");
@@ -299,6 +327,15 @@ export type Preflight =
 
 export interface PreflightInput {
   fields: FieldKey[];
+  /**
+   * Fields that are editable but not required.
+   *
+   * This gate runs on the SEND path and does not trust the summary's verdict,
+   * which is right — but it therefore has to be told the same thing the summary
+   * was. Omitted, it demanded a buy token the close does not need, so a build
+   * the form reported as ready was refused on Build & Send.
+   */
+  optionalFields?: FieldKey[];
   state: BuilderState;
   /** Multi-token flows only; validated against `caps`. */
   legs?: LegsState;
@@ -338,6 +375,7 @@ export const preflight = ({
   caps,
   overspend,
   blocker,
+  optionalFields,
 }: PreflightInput): Preflight => {
   if (legs && caps) {
     const result = validateLegs(legs, caps);
@@ -351,7 +389,7 @@ export const preflight = ({
     }
   }
 
-  const fieldResult = validate(fields, state);
+  const fieldResult = validate(fields, state, optionalFields);
   if (!fieldResult.ok) {
     return {
       ok: false,

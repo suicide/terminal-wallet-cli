@@ -1,0 +1,67 @@
+diff --git a/node_modules/@railgun-community/cookbook/dist/steps/swap/zero-x/zero-x-v2-swap-step.js b/node_modules/@railgun-community/cookbook/dist/steps/swap/zero-x/zero-x-v2-swap-step.js
+index c6118ae..aea63a9 100644
+--- a/node_modules/@railgun-community/cookbook/dist/steps/swap/zero-x/zero-x-v2-swap-step.js
++++ b/node_modules/@railgun-community/cookbook/dist/steps/swap/zero-x/zero-x-v2-swap-step.js
+@@ -36,10 +36,32 @@ class ZeroXV2SwapStep extends step_1.Step {
+             minBalance: minimumBuyAmount,
+             approvedSpender: undefined,
+         };
++        // Fold the purchase into any balance of the same token that is already
++        // being carried through. Left as two entries they are one token to the
++        // validator but two rows to the next step, and Step.getValidInputERC20Amount
++        // takes exactly one row — so a later step sees only part of what it will
++        // actually hold, or refuses outright with "received 2".
++        const buyTokenId = buyERC20Amount.tokenAddress.toLowerCase();
++        const sameToken = (a) => a.tokenAddress.toLowerCase() === buyTokenId &&
++            (a.isBaseToken ?? false) === (buyERC20Amount.isBaseToken ?? false);
++        const carriedSameToken = unusedERC20Amounts.filter(sameToken);
++        const otherERC20Amounts = unusedERC20Amounts.filter(a => !sameToken(a));
++        const mergedBuyERC20Amount = carriedSameToken.length
++            ? {
++                ...outputBuyERC20Amount,
++                expectedBalance: carriedSameToken.reduce((sum, a) => sum + a.expectedBalance, outputBuyERC20Amount.expectedBalance),
++                minBalance: carriedSameToken.reduce((sum, a) => sum + a.minBalance, outputBuyERC20Amount.minBalance),
++                // The purchase arrives unapproved, so the merged balance is too.
++                approvedSpender: undefined,
++            }
++            : outputBuyERC20Amount;
+         return {
+             crossContractCalls: [crossContractCall],
+             spentERC20Amounts: [sellERC20AmountRecipient],
+-            outputERC20Amounts: [outputBuyERC20Amount, ...unusedERC20Amounts],
++            outputERC20Amounts: [mergedBuyERC20Amount, ...otherERC20Amounts],
++            // Only the bought portion is new; the carried part still has to
++            // conserve. The validator subtracts this before comparing.
++            acquiredERC20Amounts: [outputBuyERC20Amount],
+             outputNFTs: input.nfts,
+         };
+     }
+diff --git a/node_modules/@railgun-community/cookbook/dist/validators/step-validator.js b/node_modules/@railgun-community/cookbook/dist/validators/step-validator.js
+index 00a1e7f..5ce2307 100644
+--- a/node_modules/@railgun-community/cookbook/dist/validators/step-validator.js
++++ b/node_modules/@railgun-community/cookbook/dist/validators/step-validator.js
+@@ -44,6 +44,12 @@ const validateStepOutputERC20Amounts = (input, output) => {
+         outputERC20AmountMap[id] ??= 0n;
+         outputERC20AmountMap[id] = outputERC20AmountMap[id] + amount;
+     });
++    const acquiredERC20AmountMap = {};
++    (output.acquiredERC20Amounts ?? []).forEach(({ tokenAddress, expectedBalance, isBaseToken }) => {
++        const id = getTokenId(tokenAddress, isBaseToken);
++        acquiredERC20AmountMap[id] ??= 0n;
++        acquiredERC20AmountMap[id] = acquiredERC20AmountMap[id] + expectedBalance;
++    });
+     for (const id in inputERC20AmountMap) {
+         if (!(0, shared_models_1.isDefined)(outputERC20AmountMap[id])) {
+             throw new Error(`Missing output for ${id}.`);
+@@ -51,8 +57,9 @@ const validateStepOutputERC20Amounts = (input, output) => {
+         if (outputERC20AmountMap[id] === 0n) {
+             throw new Error(`Missing output value for ${id}.`);
+         }
+-        if (inputERC20AmountMap[id] !== outputERC20AmountMap[id]) {
+-            throw new Error(`Input erc20 amounts for ${id} (${inputERC20AmountMap[id]}) must match total outputs/spent/fees (${outputERC20AmountMap[id]}).`);
++        const conservedBalance = outputERC20AmountMap[id] - (acquiredERC20AmountMap[id] ?? 0n);
++        if (inputERC20AmountMap[id] !== conservedBalance) {
++            throw new Error(`Input erc20 amounts for ${id} (${inputERC20AmountMap[id]}) must match total outputs/spent/fees less acquired (${conservedBalance}).`);
+         }
+     }
+ };

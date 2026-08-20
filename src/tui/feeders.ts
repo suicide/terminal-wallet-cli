@@ -17,12 +17,18 @@
 import { NetworkName, delay } from "@railgun-community/shared-models";
 import { formatUnits } from "ethers";
 import { emitCoreEvent } from "../core/events";
-import { getPrivateNFTsForChain } from "../railgun/balance/balance-cache";
+import {
+  getPrivateNFTsForChain,
+  getPrivateNFTBucketsForChain,
+} from "../railgun/balance/balance-cache";
+import { availabilityLabel } from "../railgun/balance/nft-availability";
 import { describeNFTs } from "../railgun/balance/nft-util";
 import { fxPositionCollections } from "../railgun/transaction/fx/position";
 import {
   poolCollateralSymbol,
   readFxPositionState,
+  fxPositionScale,
+  fxScaleNote,
 } from "../railgun/transaction/fx/position-state";
 import { fxPositionSummary, fxPositionDetailLines } from "./format/fx-position";
 import { LEFT_W } from "./layout";
@@ -138,9 +144,24 @@ export const createFeeders = (render: () => void): Feeders => {
     }[]
   > => {
     const collections = fxPositionCollections();
-    const held = describeNFTs(getPrivateNFTsForChain(network), collections);
+    const held = describeNFTs(
+      getPrivateNFTsForChain(network),
+      collections,
+      getPrivateNFTBucketsForChain(network),
+    );
     return mapLimited(held, 4, async (nft) => {
-      const base = { label: nft.label, amount: nft.amount.toString(), kind: nft.kind };
+      // A position that is held but still maturing through POI cannot be spent,
+      // and the engine's refusal for one reads as an empty wallet. Say so on the
+      // row rather than at the end of a build.
+      const poi =
+        nft.availability && nft.availability !== "spendable"
+          ? availabilityLabel(nft.availability)
+          : undefined;
+      const base = {
+        label: poi ? `${nft.label}  (${poi.text})` : nft.label,
+        amount: nft.amount.toString(),
+        kind: nft.kind,
+      };
       if (nft.kind !== "fx-position") return base;
       const pool = KNOWN_POOLS.find(
         (p) => p.address.toLowerCase() === nft.nftAddress.toLowerCase(),
@@ -153,12 +174,25 @@ export const createFeeders = (render: () => void): Feeders => {
       ).catch(() => undefined);
       const symbol = poolCollateralSymbol(pool.name);
       const fmt = (a: bigint, d: number) => fmtAmount(formatUnits(a, d), 4);
+      // A residue left by a near-total close is still an open position with
+      // debt accruing on it, but every figure on the row rounds to zero. Say
+      // which it is, so it reads as neither finished nor broken.
+      const scale = state ? fxPositionScale(state) : undefined;
+      const marks = [
+        ...(scale === "dust" ? ["residual"] : []),
+        ...(poi ? [poi.text] : []),
+      ];
       return {
         ...base,
+        label: marks.length ? `${nft.label}  (${marks.join(" · ")})` : nft.label,
         // The rail is 44 cells wide and the row is indented, so it gets what
         // fits; the full picture is a click away rather than chopped in half.
         detail: fxPositionSummary(state, symbol, fmt, RAIL_DETAIL_W),
-        detailLines: fxPositionDetailLines(nft.label, state, symbol, fmt),
+        detailLines: [
+          ...fxPositionDetailLines(nft.label, state, symbol, fmt),
+          ...(scale ? [fxScaleNote(scale)] : []).filter(Boolean),
+          ...(poi ? [poi.note] : []),
+        ],
       };
     });
   };

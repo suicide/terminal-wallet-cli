@@ -3,8 +3,9 @@
  *
  * Unwinding is the mirror of opening: the position NFT is unshielded into the
  * batch, the debt token is unshielded to repay the debt, the pool hands back
- * the collateral, and everything left is shielded again. A full close burns the
- * NFT; a partial one keeps it, so the two differ in whether it comes back.
+ * the collateral, and everything left is shielded again. The position NFT comes
+ * back either way — f(x) empties a position on close, it never destroys it, so
+ * a full close and a partial one differ only in how much debt is left.
  *
  * How MUCH can be repaid is not a free choice. It is bounded by the debt token
  * the wallet holds, less RAILGUN's unshield fee, less the pool's repay fee — and
@@ -18,7 +19,9 @@ import {
   RailgunERC20Recipient,
   RailgunNFTAmount,
 } from "@railgun-community/shared-models";
+import { Contract } from "ethers";
 import {
+  FX_POOL_RATIO_ABI,
   FxMintCloseRecipe,
   FxMintClose_ZeroXSwap_ComboMeal,
   FxMintPoolRef,
@@ -46,6 +49,8 @@ import {
   isFxSupportedNetwork,
 } from "./mint";
 import { needsSwapLeg } from "../morpho/vault";
+import { capWithdrawForDebtRatio } from "./close-guard";
+import { fullCloseRequirement, FullCloseRequirement } from "./full-close";
 import { createLogger } from "../../../platform/logger";
 
 const log = createLogger("fxmint-close");
@@ -64,12 +69,23 @@ export interface FxMintCloseBuild extends CrossContractInputs {
   /** Collateral the pool will release. */
   withdrawColl: bigint;
   /**
-   * Whether the position survives. A partial close keeps the NFT and shields it
-   * back; a full close burns it, so nothing comes back on the NFT side.
+   * Whether any debt is left. NOT whether the NFT survives — it always does:
+   * f(x) empties a position rather than destroying it, proved on mainnet by
+   * tx 0x73d732bc..., which sent the pool's own full-close sentinel and left
+   * ownerOf still returning the RAILGUN proxy.
    */
   partialClose: boolean;
   /** Whether the released collateral was swapped on the way back. */
   swapped: boolean;
+  /**
+   * What a FULL close would need, and how far short this is.
+   *
+   * A close silently degrades to partial when the debt token does not cover the
+   * whole debt, and the gap is often a fraction of a percent. Returned so the
+   * caller can say so before the user commits, rather than leaving them to
+   * derive it from two fee ratios.
+   */
+  fullClose: FullCloseRequirement;
 }
 
 /**
@@ -84,9 +100,11 @@ export interface FxMintCloseBuild extends CrossContractInputs {
  * collateral itself is the same as omitting it.
  *
  * Note the asymmetry: the debt is ALWAYS repaid in the pool's own debt token —
- * fxUSD on a long, the volatile asset on a short. The cookbook's close combo
- * swaps on the way OUT only, so a wallet holding none of that token cannot
- * close a position here regardless of what else it holds.
+ * fxUSD on a long, the volatile asset on a short. THIS path's combo swaps on
+ * the way OUT only, so a wallet holding none of that token cannot close a
+ * position here regardless of what else it holds. `dust-close.ts` is the way
+ * round that: the cookbook also ships a swap-THEN-close combo, which buys the
+ * debt token first.
  */
 export const getFxMintCloseInputs = async (
   chainName: NetworkName,
@@ -123,6 +141,15 @@ export const getFxMintCloseInputs = async (
       `RAILGUN fees are not known for ${chainName} yet — wait for the engine to load.`,
     );
   }
+  // Before computeFxClose, which refuses a zero debt with wording about a
+  // proportional withdraw being undefined — true, and not what the user needs
+  // to read. A closed position stays in the wallet as an empty one, so
+  // selecting it here is an easy mistake rather than an exotic one.
+  if (position.debt <= 0n) {
+    throw new Error(
+      "This position is already empty — nothing is owed, so there is nothing to close.",
+    );
+  }
   const amounts = computeFxClose({
     // Both of these are NATIVE token amounts. The cookbook used to take the
     // position's raw figures here and derive the native ones itself; it now
@@ -138,11 +165,27 @@ export const getFxMintCloseInputs = async (
     railgunUnshieldFeeBps: fees.unshield,
   });
 
+  const fullClose = fullCloseRequirement({
+    debt: position.debt,
+    repayFeeRatio: poolState.repayFeeRatio,
+    railgunUnshieldFeeBps: fees.unshield,
+    availableDebtToken: shieldedDebtToken,
+  });
+
   log.debug(
     `close ${positionId} on ${pool.address} as ephemeral [${ephemeralIndex}] ` +
       `${ephemeralAddress}: repay ${amounts.repayAmount}, withdraw ` +
       `${amounts.withdrawColl}, partial=${amounts.partialClose}`,
   );
+  if (!fullClose.closesFully) {
+    // The number the user would otherwise have to derive themselves.
+    log.warn(
+      `close ${positionId} will be PARTIAL: closing outright needs ` +
+        `${fullClose.required} of the debt token and ${shieldedDebtToken} is ` +
+        `available — short by ${fullClose.shortfall}. A partial close leaves the ` +
+        `position open and still accruing debt.`,
+    );
+  }
 
   if (amounts.repayAmount <= 0n) {
     throw new Error(
@@ -168,11 +211,48 @@ export const getFxMintCloseInputs = async (
     },
   ];
 
+  // A partial close leaves a residual position, and the pool checks ITS debt
+  // ratio. The proportional withdrawal above is sized in native collateral and
+  // arrives at the pool converted to raw, slightly inflated — negligible until
+  // the residual is small, at which point the ratio is computed over almost
+  // nothing and the inflation dominates it. Cap the withdrawal so the residual
+  // stays inside the pool's range. A full close is sent as the pool's own
+  // sentinel and leaves no residual, so it is left alone.
+  let { withdrawColl } = amounts;
+  if (amounts.partialClose) {
+    const [minRatio, maxRatio] = await new Contract(
+      pool.address,
+      FX_POOL_RATIO_ABI,
+      provider,
+    ).getDebtRatioRange();
+    void minRatio;
+    const guard = capWithdrawForDebtRatio({
+      rawColls: position.rawColls,
+      rawDebts: position.rawDebts,
+      debt: position.debt,
+      collateralAmount: position.collateralAmount,
+      debtRatio: position.debtRatio,
+      maxRatio,
+      repayAmount: amounts.repayAmount,
+      withdrawColl: amounts.withdrawColl,
+    });
+    if (guard.clamped) {
+      log.warn(
+        `close ${positionId}: proportional withdraw ${amounts.withdrawColl} would ` +
+          `leave a debt ratio of ${guard.projectedRatio} against a maximum of ` +
+          `${maxRatio}; withdrawing ${guard.withdrawColl} instead to land near ` +
+          `${guard.targetRatio}. The repay is unchanged — the difference stays ` +
+          `as collateral in the position.`,
+      );
+    }
+    ({ withdrawColl } = guard);
+  }
+
   const fxOpts = {
     pool: poolRef,
     positionId,
     repayAmount: amounts.repayAmount,
-    withdrawColl: amounts.withdrawColl,
+    withdrawColl,
     approveAmount: amounts.approveAmount,
     withdrawFeeRatio: poolState.withdrawFeeRatio,
     partialClose: amounts.partialClose,
@@ -215,10 +295,12 @@ export const getFxMintCloseInputs = async (
     withdrawColl: amounts.withdrawColl,
     partialClose: amounts.partialClose,
     swapped: Boolean(swapTo),
+    fullClose,
     relayAdaptUnshieldERC20Amounts,
     relayAdaptUnshieldNFTAmounts: [positionNFT],
-    // A full close burns the position, so the recipe declares no NFT output and
-    // this is empty — which is correct, not a gap.
+    // Whatever the recipe declares. A full close declares no NFT output, and
+    // the NFT still comes back — RelayAdapt returns it as an unspent leftover
+    // rather than a declared shield, since nothing in the batch consumes it.
     relayAdaptShieldNFTRecipients: toShieldNFTRecipients(
       recipeOutput.nftRecipients,
     ),
