@@ -1,19 +1,40 @@
 /**
- * How one RPC endpoint reads on the editor's list.
+ * How one RPC endpoint reads, everywhere it is shown.
  *
- * Two independent facts share the row and must not be confused for each other:
- * whether the user ENABLED it, and whether it ANSWERS. The old editor showed
- * only the first and called it "enabled", which is why an endpoint could be
- * dead for weeks without anything on screen saying so.
+ * Three facts belong on every row and they are independent of each other:
+ *
+ *   enabled  — the user's setting. Says nothing about whether it works.
+ *   block    — whether it ANSWERS, and how current it is.
+ *   origin   — where it came from, and therefore where it can be changed.
+ *
+ * The old editor showed the first alone and called it "enabled", which is why
+ * an endpoint could be dead for weeks with nothing on screen saying so. Any
+ * surface listing endpoints uses `rpcRowLine` so the three never drift apart
+ * between one dialog and the next.
  */
 import { RpcProbe } from "../../railgun/network/rpc-probe";
+
+/**
+ * Where an endpoint came from, which is what decides whether it can be removed
+ * HERE or only somewhere else.
+ *
+ * - `builtin` ships with the app.
+ * - `config`  comes from twallet.config.json (or the remote config), which
+ *              REPLACES the built-in list outright — so a machine with an
+ *              override has no built-ins in play at all, and a list of one is
+ *              correct rather than broken.
+ * - `custom`  was added in this editor and lives on the keychain.
+ *
+ * Only `custom` is removable here. Calling the other two "shipped" was wrong:
+ * it told someone their own configured endpoint came from us.
+ */
+export type RpcOrigin = "builtin" | "config" | "custom";
 
 export interface RpcRow {
   url: string;
   /** The user's setting. Independent of whether it works. */
   enabled: boolean;
-  /** Shipped with the app; only custom entries can be removed. */
-  isDefault: boolean;
+  origin: RpcOrigin;
   /** undefined while the probe is still out. */
   probe?: RpcProbe;
 }
@@ -30,12 +51,13 @@ export const shortenUrl = (url: string, max = 44): string => {
 /**
  * The status cell.
  *
- * `lead` is the block height of the furthest-ahead endpoint that answered, so
- * a straggler can be reported by how far behind it is. Being 200 blocks back is
- * the failure that looks most like success — it answers, it returns a plausible
- * number, and it serves stale state to everything that reads through it.
+ * `lead` is the height of the furthest-ahead endpoint that answered, so a
+ * straggler is reported by how far back it is. Being hundreds of blocks behind
+ * is the failure that looks most like success — it answers, the number is
+ * plausible, and everything reading through it gets stale state.
  */
 export const rpcStatusLabel = (row: RpcRow, lead?: bigint): string => {
+  if (!row.enabled) return "disabled";
   if (!row.probe) return "checking…";
   if (!row.probe.ok) return row.probe.reason;
   const { blockNumber, latencyMs } = row.probe;
@@ -46,6 +68,54 @@ export const rpcStatusLabel = (row: RpcRow, lead?: bigint): string => {
   return `${height}  ${latencyMs}ms`;
 };
 
+/** Which colour the status cell carries. Kept here so every surface agrees. */
+export const rpcStatusTone = (
+  row: RpcRow,
+  lead?: bigint,
+): "gray" | "green" | "yellow" | "red" => {
+  if (!row.enabled) return "gray";
+  if (!row.probe) return "gray";
+  if (!row.probe.ok) return "red";
+  if (lead !== undefined && lead - row.probe.blockNumber > 1n) return "yellow";
+  return "green";
+};
+
+/** Width of the URL column for a set of rows, so columns line up. */
+export const rpcUrlWidth = (rows: RpcRow[], max = 46): number =>
+  Math.min(max, rows.reduce((w, r) => Math.max(w, shortenUrl(r.url).length), 0));
+
+/**
+ * THE row. Every list of endpoints renders through this.
+ *
+ * `tag` is injected so the same layout serves a blessed list (colour markup)
+ * and a plain picker (no markup) without either owning the other's concerns.
+ */
+export const rpcRowLine = (
+  row: RpcRow,
+  opts: {
+    lead?: bigint;
+    urlWidth?: number;
+    tag?: (text: string, tone: string) => string;
+  } = {},
+): string => {
+  const paint = opts.tag ?? ((text: string) => text);
+  const width = opts.urlWidth ?? shortenUrl(row.url).length;
+  const box = row.enabled ? paint("[x]", "green") : "[ ]";
+  const status = paint(
+    rpcStatusLabel(row, opts.lead),
+    rpcStatusTone(row, opts.lead),
+  );
+  // Origin is a capability, not decoration: it is the difference between an
+  // endpoint that can be removed here and one that can only be turned off.
+  const kind =
+    row.origin === "custom"
+      ? `  ${paint("custom", "cyan")}`
+      : row.origin === "config"
+        ? `  ${paint("config", "magenta")}`
+        : "";
+  return `${box} ${shortenUrl(row.url).padEnd(width + 2)}${status}${kind}`;
+};
+
 /**
  * The single line under the list.
  *
@@ -54,13 +124,23 @@ export const rpcStatusLabel = (row: RpcRow, lead?: bigint): string => {
  * answering" is the thing worth knowing before a send fails.
  */
 export const rpcSummaryLine = (rows: RpcRow[]): string => {
+  // An override replaces the built-in list, so a short list is the override
+  // working — but "where did my endpoints go" is the obvious reading unless it
+  // is said out loud.
+  const overridden = rows.some((r) => r.origin === "config")
+    ? " · built-ins replaced by twallet.config.json"
+    : "";
   const enabled = rows.filter((r) => r.enabled);
-  if (!enabled.length) return "no endpoints enabled — the wallet cannot reach this chain";
+  if (!enabled.length) {
+    return `no endpoints enabled — the wallet cannot reach this chain${overridden}`;
+  }
   const pending = enabled.filter((r) => !r.probe).length;
   const live = enabled.filter((r) => r.probe?.ok).length;
-  if (pending) return `${live} of ${enabled.length} answering · ${pending} still checking`;
-  if (!live) return `NONE of ${enabled.length} enabled endpoints answered`;
-  return `${live} of ${enabled.length} enabled endpoints answering`;
+  if (pending) {
+    return `${live} of ${enabled.length} answering · ${pending} checking${overridden}`;
+  }
+  if (!live) return `NONE of ${enabled.length} enabled endpoints answered${overridden}`;
+  return `${live} of ${enabled.length} enabled answering${overridden}`;
 };
 
 /** The furthest-ahead height anything reported, or undefined if nothing did. */
@@ -70,3 +150,42 @@ export const leadBlock = (rows: RpcRow[]): bigint | undefined => {
     .filter((h): h is bigint => h !== undefined);
   return heights.length ? heights.reduce((a, b) => (b > a ? b : a)) : undefined;
 };
+
+/**
+ * Turning every shipped endpoint off, and back on.
+ *
+ * Working around a bad default otherwise means finding each one and toggling
+ * it, which is the fiddly part of a job you are only doing because something is
+ * already broken. Refuses when it would leave nothing enabled — a chain with no
+ * reachable endpoint is not a state to arrive at by keystroke.
+ */
+export const onlyCustomToggle = (
+  rows: RpcRow[],
+): { rows: RpcRow[]; changed: boolean; reason?: string } => {
+  const others = rows.filter((r) => r.origin !== "custom");
+  if (!others.length) {
+    return { rows, changed: false, reason: "every endpoint here is already a custom one" };
+  }
+  const turningOff = others.some((r) => r.enabled);
+  if (turningOff && !rows.some((r) => r.origin === "custom" && r.enabled)) {
+    return {
+      rows,
+      changed: false,
+      reason: "add or enable a custom endpoint first — this would leave none",
+    };
+  }
+  return {
+    rows: rows.map((r) =>
+      r.origin !== "custom" ? { ...r, enabled: !turningOff, probe: undefined } : r,
+    ),
+    changed: true,
+  };
+};
+
+/** Why this endpoint cannot be removed here, and where it can be changed. */
+export const rpcRemovalRefusal = (row: RpcRow): string | undefined =>
+  row.origin === "custom"
+    ? undefined
+    : row.origin === "config"
+      ? "set in twallet.config.json — edit that file, or press space to disable"
+      : "a built-in endpoint — press space to disable it instead";

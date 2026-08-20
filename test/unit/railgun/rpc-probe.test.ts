@@ -11,6 +11,9 @@ import { parseBlockNumberResponse } from "../../../src/railgun/network/rpc-probe
 import {
   RpcRow,
   leadBlock,
+  onlyCustomToggle,
+  rpcRemovalRefusal,
+  rpcRowLine,
   rpcStatusLabel,
   rpcSummaryLine,
   shortenUrl,
@@ -65,7 +68,7 @@ test("CONTROL: block 0 is reported as a fault, not as a height", () => {
 const row = (over: Partial<RpcRow> = {}): RpcRow => ({
   url: "https://eth.example.com/v2/abcdef",
   enabled: true,
-  isDefault: true,
+  origin: "builtin",
   ...over,
 });
 
@@ -106,7 +109,7 @@ test("the summary counts what answers, not what is configured", () => {
     row({ url: "b", probe: { ok: false, reason: "unreachable" } }),
     row({ url: "c", enabled: false }),
   ];
-  assert.equal(rpcSummaryLine(rows), "1 of 2 enabled endpoints answering");
+  assert.equal(rpcSummaryLine(rows), "1 of 2 enabled answering");
 });
 
 test("the summary says so when nothing answers", () => {
@@ -120,7 +123,7 @@ test("the summary says so when nothing is enabled", () => {
 
 test("a disabled endpoint is not counted as a failure while probes are out", () => {
   const rows = [row({ url: "a" }), row({ url: "b", enabled: false })];
-  assert.match(rpcSummaryLine(rows), /1 still checking/);
+  assert.match(rpcSummaryLine(rows), /1 checking/);
 });
 
 test("the lead is the furthest ahead that answered, ignoring failures", () => {
@@ -141,4 +144,95 @@ test("a long URL keeps its tail, so two keys are still distinguishable", () => {
 
 test("a short URL is left alone", () => {
   assert.equal(shortenUrl("https://rpc.example.com"), "https://rpc.example.com");
+});
+
+// --- the row every surface renders -----------------------------------------
+
+test("a row carries all three facts: enabled, block, custom", () => {
+  // They are independent — a shipped endpoint can be enabled and dead, a custom
+  // one disabled and fine — so a surface that drops one of them misleads.
+  const line = rpcRowLine(
+    { url: "https://a.example", enabled: true, origin: "custom", probe: ok(25789846n) },
+    { lead: 25789846n },
+  );
+  assert.match(line, /^\[x\]/, "enabled state missing");
+  assert.match(line, /25,789,846/, "block height missing");
+  assert.match(line, /custom/, "custom marker missing");
+});
+
+test("a shipped endpoint is not marked custom", () => {
+  const line = rpcRowLine({ url: "https://a.example", enabled: true, origin: "builtin", probe: ok(1n) });
+  assert.ok(!line.includes("custom"), "a built-in endpoint claimed it could be removed");
+});
+
+test("a disabled row says disabled rather than reporting a stale height", () => {
+  const line = rpcRowLine({ url: "https://a.example", enabled: false, origin: "builtin", probe: ok(25789846n) });
+  assert.match(line, /^\[ \]/);
+  assert.match(line, /disabled/);
+  assert.ok(!line.includes("25,789,846"), "a disabled endpoint showed a height as if it were live");
+});
+
+// --- only-custom -------------------------------------------------------------
+
+const three = (): RpcRow[] => [
+  { url: "d1", enabled: true, origin: "builtin" },
+  { url: "d2", enabled: true, origin: "config" },
+  { url: "c1", enabled: true, origin: "custom" },
+];
+
+test("only-custom turns every shipped endpoint off and leaves customs alone", () => {
+  const r = onlyCustomToggle(three());
+  assert.equal(r.changed, true);
+  assert.deepEqual(r.rows.map((x) => x.enabled), [false, false, true]);
+});
+
+test("only-custom is a toggle — it puts the shipped ones back", () => {
+  const off = onlyCustomToggle(three()).rows;
+  const on = onlyCustomToggle(off);
+  assert.equal(on.changed, true);
+  assert.deepEqual(on.rows.map((x) => x.enabled), [true, true, true]);
+});
+
+test("CONTROL: it refuses when it would leave nothing enabled", () => {
+  // A chain with no reachable endpoint is not a state to arrive at by
+  // keystroke, and the refusal has to say why.
+  const noCustom: RpcRow[] = [
+    { url: "d1", enabled: true, origin: "builtin" },
+    { url: "c1", enabled: false, origin: "custom" },
+  ];
+  const r = onlyCustomToggle(noCustom);
+  assert.equal(r.changed, false);
+  assert.match(r.reason ?? "", /custom endpoint first/);
+  assert.deepEqual(r.rows.map((x) => x.enabled), [true, false], "rows were mutated on a refusal");
+});
+
+test("only-custom says so when everything is already custom", () => {
+  const r = onlyCustomToggle([{ url: "c1", enabled: true, origin: "custom" }]);
+  assert.equal(r.changed, false);
+  assert.match(r.reason ?? "", /already a custom one/);
+});
+
+// --- origin decides where an endpoint can be changed -------------------------
+
+test("only an endpoint added here can be removed here", () => {
+  // The others come back on the next config load, so removing them in this
+  // editor would be a lie about what just happened.
+  assert.equal(rpcRemovalRefusal(row({ origin: "custom" })), undefined);
+  assert.match(rpcRemovalRefusal(row({ origin: "builtin" })) ?? "", /built-in/);
+  assert.match(rpcRemovalRefusal(row({ origin: "config" })) ?? "", /twallet\.config\.json/);
+});
+
+test("CONTROL: a config endpoint is never described as shipped by us", () => {
+  // It is the user's own endpoint. Calling it shipped told them we put it
+  // there and that they could not change it.
+  const line = rpcRowLine(row({ origin: "config", probe: ok(1n) }));
+  assert.match(line, /config/);
+  assert.ok(!/shipped/i.test(rpcRemovalRefusal(row({ origin: "config" })) ?? ""));
+});
+
+test("a short list says WHY, when a config override replaced the built-ins", () => {
+  // One endpoint is the override working, not endpoints going missing.
+  const line = rpcSummaryLine([row({ origin: "config", probe: ok(1n) })]);
+  assert.match(line, /built-ins replaced by twallet\.config\.json/);
+  assert.ok(!rpcSummaryLine([row({ origin: "builtin", probe: ok(1n) })]).includes("replaced"));
 });
