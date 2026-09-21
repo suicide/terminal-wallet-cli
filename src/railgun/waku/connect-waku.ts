@@ -16,7 +16,6 @@ const log = createLogger("waku");
 let wakuBroadcasterTransaction: WakuBroadcasterTransaction;
 let wakuLoaded = false;
 let isConnected = false;
-export let baseAllowList: string[] | undefined = undefined;
 export let baseBlockList: string[] | undefined = undefined;
 export let wakuClient: WakuBroadcasterClient;
 
@@ -29,9 +28,10 @@ const broadcasterOptions: BroadcasterOptions = {
 /**
  * Normalize a config value that is declared `string | string[]`.
  *
- * The filter these feed does `allowlist.includes(address)`. On an array that is
- * a membership test; on a string it is a SUBSTRING test, which is a different
- * question with a coincidentally similar answer.
+ * Used for the blocklist, and for counting the configured trusted fee signers
+ * in the boot log. On an array `includes` is a membership test; on a string it
+ * is a SUBSTRING test, which is a different question with a coincidentally
+ * similar answer.
  */
 const asList = (value: string | string[] | undefined): string[] => {
   if (value === undefined) return [];
@@ -39,52 +39,30 @@ const asList = (value: string | string[] | undefined): string[] => {
 };
 
 /**
- * The trusted fee signers, and so the only broadcasters this app will use.
+ * The broadcaster address filter.
  *
- * Falls back to the baked-in signer rather than to an empty list. An empty
- * allow list is not a stricter filter but the absence of one, so a remote
- * config that failed to load — the case `fallbackRemoteConfig` exists for —
- * would otherwise widen the app from one permitted broadcaster to every
- * broadcaster on the network, exactly when least is known about them.
+ * The allow list is deliberately left undefined, which the SDK reads as "no
+ * address restriction": `!allowlist || allowlist.includes(address)`.
+ * Broadcaster admission is decided by the SDK's own trusted-fee-signer
+ * mechanism instead — `broadcasterOptions.trustedFeeSigner` sets the
+ * authorized fee each trusted signer publishes, and any other broadcaster is
+ * admitted only while its quote stays within the SDK's variance band of that
+ * authorized fee. That is the "in range of the trusted fee signer" set the app
+ * wants to show.
+ *
+ * The app previously set the allow list to the trusted signer addresses
+ * themselves. Because `AddressFilter.filter` runs over the fee-cache keys
+ * (`feeMessageData.railgunAddress`), that left only the signers reachable and
+ * made the SDK variance band unreachable — every in-range broadcaster from a
+ * different signer was hidden.
+ *
+ * The blocklist remains local and user-controlled. Passing an empty ARRAY for
+ * the allow list would admit nobody (`[]` is truthy and `[].includes` is
+ * always false), so `undefined` is the only value that means "no restriction".
  */
-export const trustedFeeSigners = (): string[] => {
-  const configured = asList(remoteConfig.trustedFeeSigner);
-  const signers =
-    configured.length > 0 ? configured : [DEFAULT_TRUSTED_FEE_SIGNER];
-  // Lowercased because the two filters disagree about case. `AddressFilter`
-  // does an exact `includes`, while the SDK's fee-signer check lowercases both
-  // sides — so a config carrying a mixed-case address would pass fee trust and
-  // still match nothing here, removing every broadcaster with no indication
-  // why. 0zk addresses are bech32 and therefore canonically lowercase, which is
-  // what makes normalizing safe rather than merely hopeful.
-  return signers.map((address) => address.toLowerCase());
-};
-
-/**
- * The broadcaster address filters.
- *
- * An empty allow list means "no address restriction" — the SDK's filter is
- * `!allowlist || allowlist.includes(address)`, so `undefined` admits everyone
- * and a populated list admits ONLY its members.
- *
- * The allow list is the trusted fee signers. Both sides of the SDK's filter
- * speak the same address space: `AddressFilter.filter` runs over the keys of
- * the fee cache, which are `feeMessageData.railgunAddress` — the exact field
- * `trustedFeeSigner` is matched against when a fee message arrives. So an
- * address that can sign an authorized fee is a broadcaster address, and
- * restricting the filter to that set restricts the app to those broadcasters.
- *
- * This is deliberately narrower than the SDK's own trust model. On its own,
- * `broadcasterOptions.trustedFeeSigner` admits an untrusted broadcaster whose
- * quote falls within a variance band of an authorized fee; the allow list
- * removes that band and leaves only the signers themselves. A favourite that is
- * not a trusted signer therefore never becomes selectable — intended, since a
- * favourite is a preference among permitted broadcasters, not a grant.
- */
-export const initializeLists = (allowList: string[], blockList: string[]) => {
-  baseAllowList = allowList.length > 0 ? allowList : undefined;
+export const initializeLists = (blockList: string[]) => {
   baseBlockList = blockList.length > 0 ? blockList : undefined;
-  wakuClient.setAddressFilters(baseAllowList, baseBlockList);
+  wakuClient.setAddressFilters(undefined, baseBlockList);
 };
 
 const wakuStatusCallback = (chain: Chain, status: string) => {
@@ -129,20 +107,21 @@ export const initWakuClient = async () => {
   // @ts-ignore
   wakuBroadcasterTransaction = waku.BroadcasterTransaction; // as WakuBroadcasterTransaction;
   wakuLoaded = true;
-  const signers = trustedFeeSigners();
+  const configuredSigners = asList(remoteConfig.trustedFeeSigner);
   const blocked = asList(remoteConfig.blacklist);
-  // The signer count decides how many broadcasters exist as far as this app is
-  // concerned, and it arrives from an on-chain artifact that is edited by hand.
-  // A publish that dropped four of five, or shipped a bare string where a list
-  // was meant, is otherwise silent until it surfaces much later as "no
-  // broadcasters available for your tokens".
+  // The signer count decides how many authorized fee baselines exist, and it
+  // arrives from an on-chain artifact that is edited by hand. A publish that
+  // dropped four of five, or shipped a bare string where a list was meant, is
+  // otherwise silent until it surfaces much later as "no broadcasters available
+  // for your tokens". Only the SDK's variance band uses these; the address
+  // allow list stays open so in-range broadcasters from other signers show up.
   const configured = isDefined(remoteConfig.trustedFeeSigner);
   log.info(
-    `broadcaster allow list: ${signers.length} trusted fee signer(s)` +
+    `broadcaster trust: ${configuredSigners.length || 1} trusted fee signer(s)` +
       `${configured ? "" : " (remote config carried none — using the built-in)"}` +
       `, ${blocked.length} blocked`,
   );
-  initializeLists(signers, blocked);
+  initializeLists(blocked);
 };
 
 export const switchWakuNetwork = async (chainName: NetworkName) => {

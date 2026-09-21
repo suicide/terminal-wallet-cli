@@ -6,11 +6,16 @@
  * of it: `undefined` admits every broadcaster on the network, and an empty
  * ARRAY admits none, because `[]` is truthy and `[].includes(x)` is false.
  *
- * The policy is that the allow list holds the trusted fee signers, so only
- * those broadcasters are reachable. Both sides speak the same address space:
- * the filter runs over fee-cache keys, which are `feeMessageData.railgunAddress`
- * — the field `trustedFeeSigner` is matched against. A signer address IS a
- * broadcaster address.
+ * The policy is that the allow list stays `undefined` — no address restriction.
+ * Admission is decided by the SDK's trusted-fee-signer mechanism instead:
+ * `broadcasterOptions.trustedFeeSigner` sets the authorized fee each trusted
+ * signer publishes, and any other broadcaster is admitted only while its quote
+ * stays within the SDK's variance band of that authorized fee. Setting the
+ * allow list to the signer addresses would leave only those signers reachable
+ * and make the variance band unreachable, hiding every in-range broadcaster
+ * from a different signer.
+ *
+ * The blocklist remains local and user-controlled, and may only subtract.
  *
  * These read the source, because reaching the real filter means starting a
  * libp2p mesh.
@@ -37,7 +42,7 @@ const read = (rel: string): string =>
     .join("\n");
 
 const TRUSTED_SIGNER = "0zk1qyzgh9ctuxm6d06gmax39xutjgraw";
-const OTHER_BROADCASTER = "0zk1qykotherbroadcasteraddress00";
+const IN_RANGE_BROADCASTER = "0zk1qykotherbroadcasteraddress00";
 
 /** The SDK's rule, reproduced so the consequence is demonstrated, not asserted. */
 const sdkFilter = (
@@ -49,16 +54,10 @@ const sdkFilter = (
     .filter((a) => !allowlist || allowlist.includes(a))
     .filter((a) => !blocklist || !blocklist.includes(a));
 
-test("an allow list of trusted signers hides every other broadcaster", () => {
-  // The intended consequence, shown rather than described.
-  const seen = [TRUSTED_SIGNER, OTHER_BROADCASTER];
-  assert.deepEqual(sdkFilter(seen, [TRUSTED_SIGNER], undefined), [TRUSTED_SIGNER]);
-});
-
-test("CONTROL: an undefined allow list admits the whole network", () => {
-  // The fail-OPEN side. This is what an empty configured list would collapse
-  // to, which is why the resolver below must never return one.
-  const seen = [TRUSTED_SIGNER, OTHER_BROADCASTER];
+test("an undefined allow list admits the whole network", () => {
+  // The desired behavior now: who is reachable is decided by the SDK's
+  // trusted-fee-signer variance band, not by an address allow list.
+  const seen = [TRUSTED_SIGNER, IN_RANGE_BROADCASTER];
   assert.deepEqual(sdkFilter(seen, undefined, undefined), seen);
 });
 
@@ -66,64 +65,39 @@ test("CONTROL: an empty-array allow list admits nobody", () => {
   // The fail-CLOSED side, and the reason `[]` is never a safe seed value: it
   // is truthy, so it is a restriction to the empty set rather than the absence
   // of a restriction.
-  const seen = [TRUSTED_SIGNER, OTHER_BROADCASTER];
+  const seen = [TRUSTED_SIGNER, IN_RANGE_BROADCASTER];
   assert.deepEqual(sdkFilter(seen, [], undefined), []);
 });
 
-test("the allow list is loaded with the trusted fee signers", () => {
+test("CONTROL: an allow list of signers would hide every other broadcaster", () => {
+  // What the app used to do, shown so the reason for dropping it is explicit:
+  // an in-range broadcaster from a different signer disappears before the SDK
+  // variance check ever runs.
+  const seen = [TRUSTED_SIGNER, IN_RANGE_BROADCASTER];
+  assert.deepEqual(sdkFilter(seen, [TRUSTED_SIGNER], undefined), [TRUSTED_SIGNER]);
+});
+
+test("boot leaves the allow list unset and only sets the blocklist", () => {
   const source = read("railgun/waku/connect-waku.ts");
   assert.match(
     source,
-    /const signers = trustedFeeSigners\(\)/,
-    "boot no longer resolves the trusted fee signers",
-  );
-  assert.match(
-    source,
-    /initializeLists\(signers,/,
-    "boot no longer restricts broadcasters to the trusted fee signers",
+    /initializeLists\(blocked\)/,
+    "boot no longer passes just the blocklist",
   );
   assert.ok(
-    !/initializeLists\(\[\]/.test(source),
-    "boot starts with no address restriction, admitting every broadcaster",
+    !/initializeLists\(signers/.test(source),
+    "boot still restricts broadcasters to the trusted fee signers",
   );
-});
-
-test("the resolver falls back to the baked-in signer rather than to nothing", () => {
-  // An unreachable remote config is the case `fallbackRemoteConfig` exists for.
-  // Returning [] there would widen the app from one permitted broadcaster to
-  // every broadcaster on the network, exactly when least is known about them.
-  const source = read("railgun/waku/connect-waku.ts");
   assert.match(
     source,
-    /configured\.length > 0 \? configured : \[DEFAULT_TRUSTED_FEE_SIGNER\]/,
-    "the trusted-signer resolver can return an empty list",
-  );
-});
-
-test("CONTROL: the two filters disagree about case, so the list is normalized", () => {
-  // AddressFilter does an exact `includes`; the SDK's fee-signer check
-  // lowercases both sides. A config carrying a mixed-case address would pass
-  // fee trust and match nothing here, removing every broadcaster with no
-  // indication why. Shown rather than described:
-  const advertised = TRUSTED_SIGNER; // canonical, lowercase
-  const mixedCase = TRUSTED_SIGNER.toUpperCase();
-  assert.deepEqual(sdkFilter([advertised], [mixedCase], undefined), []);
-  assert.deepEqual(
-    sdkFilter([advertised], [mixedCase.toLowerCase()], undefined),
-    [advertised],
-  );
-
-  const source = read("railgun/waku/connect-waku.ts");
-  assert.match(
-    source,
-    /\.map\(\(address\) => address\.toLowerCase\(\)\)/,
-    "the trusted-signer list is not normalized before it becomes the allow list",
+    /setAddressFilters\(undefined, baseBlockList\)/,
+    "the allow list is not left undefined at boot",
   );
 });
 
 test("fee-signature trust is still enforced, through the option that means it", () => {
-  // The allow list narrows WHO is reachable; it does not replace the SDK's own
-  // fee-signature check. Both controls stay on.
+  // The SDK's variance band is the admission gate now. It needs the trusted
+  // signers to establish the authorized fee baseline.
   const source = read("railgun/waku/connect-waku.ts");
   assert.match(
     source,
@@ -133,39 +107,37 @@ test("fee-signature trust is still enforced, through the option that means it", 
 
 test("a config value declared string-or-array is normalized before it is used", () => {
   // `includes` on an array is a membership test; on a string it is a substring
-  // test. Same method name, different question.
+  // test. Same method name, different question. Used for the blocklist and the
+  // signer count in the boot log.
   const source = read("railgun/waku/connect-waku.ts");
   assert.match(source, /Array\.isArray\(value\) \? value : \[value\]/);
 });
 
-test("CONTROL: blocking a broadcaster does not clear the allow list", () => {
-  // The two setters disagreed: one passed both lists, the other passed
-  // `undefined` for the allow list, so whichever ran last decided the filters
-  // and blocking someone silently widened the allow list to everyone.
+test("blocking a broadcaster never reopens an allow list", () => {
+  // Blocking must only subtract. If a filter mutation passed an allow list, it
+  // would silently restrict every lookup to that list — the exact narrowing
+  // this policy removed.
   const source = read("railgun/waku/broadcaster-util.ts");
-  assert.ok(
-    !/setAddressFilters\(undefined,/.test(source),
-    "blocking still wipes the allow list as a side effect",
-  );
   const calls = source.match(/setAddressFilters\([^)]*\)/g) ?? [];
-  assert.equal(calls.length, 3, "expected one call per list mutation");
+  assert.ok(calls.length > 0, "expected at least one filter mutation");
   for (const call of calls) {
     assert.match(
       call,
-      /currentAllowList,\s*currentBlockList/,
-      `${call} does not set both lists`,
+      /setAddressFilters\(undefined,\s*currentBlockList\)/,
+      `${call} does not leave the allow list unset`,
     );
   }
+  assert.ok(
+    !/currentAllowList/.test(source),
+    "the blocklist util still carries allow-list state",
+  );
 });
 
-test("CONTROL: the filter mutators do not seed themselves with an empty array", () => {
-  // Seeded with `[]`, blocking one broadcaster before any allow-list mutation
-  // set the allow list to the empty set and hid every broadcaster at once.
+test("CONTROL: the filter mutator does not seed itself with an empty array", () => {
+  // Seeded with `[]`, blocking one broadcaster before any mutation set the
+  // blocklist to the empty set — harmless here, but ambiguous with the SDK's
+  // fail-closed allow-list semantics.
   const source = read("railgun/waku/broadcaster-util.ts");
-  assert.ok(
-    !/let currentAllowList[^=]*=\s*\[\]/.test(source),
-    "the allow list is seeded with [], which admits nobody",
-  );
   assert.ok(
     !/let currentBlockList[^=]*=\s*\[\]/.test(source),
     "the block list is seeded with []",
@@ -173,14 +145,13 @@ test("CONTROL: the filter mutators do not seed themselves with an empty array", 
 });
 
 test("CONTROL: pushing to a filter does not mutate the base list in place", () => {
-  // `currentAllowList = baseAllowList` followed by `.push()` edits the module's
+  // `currentBlockList = baseBlockList` followed by `.push()` edits the module's
   // base list, so resetting the filters restores the mutated list rather than
   // the configured one.
   const source = read("railgun/waku/broadcaster-util.ts");
   assert.ok(
-    !/currentAllowList = baseAllowList;\s*\n\s*\}/.test(source),
-    "the allow list aliases the base list before being pushed to",
+    !/currentBlockList = baseBlockList;\s*\n\s*\}/.test(source),
+    "the block list aliases the base list before being pushed to",
   );
-  assert.match(source, /startFrom\(baseAllowList\)/);
   assert.match(source, /startFrom\(baseBlockList\)/);
 });
