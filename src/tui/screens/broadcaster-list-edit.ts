@@ -1,5 +1,5 @@
 /**
- * Pure model for the broadcaster allow/blocklist editor. Persistence + the
+ * Pure model for the broadcaster favorites/blocklist editor. Persistence + the
  * one-list invariant live in wallet/broadcaster-prefs; this owns the renderer-
  * agnostic bits the editor needs: the pref of an address, its precedence, and
  * the editor's row list (favourites in precedence order, then blocked, then any

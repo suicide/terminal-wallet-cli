@@ -24,7 +24,7 @@ export const networkMenu = (): InputChoice[] => [
   { label: "Start Waku", value: "waku-start", hint: "connect broadcasters" },
   { label: "Refresh Waku / Broadcasters", value: "reset-broadcasters", hint: "reconnect · re-discover" },
   { label: "Stop Waku", value: "waku-stop", hint: "disconnect" },
-  { label: "Broadcaster Allow / Blocklist", value: "broadcaster-prefs", hint: "favorites · blocked" },
+  { label: "Broadcaster Favorites / Blocklist", value: "broadcaster-prefs", hint: "favorites · blocked" },
 ];
 
 export const statusMenu = (): InputChoice[] => [

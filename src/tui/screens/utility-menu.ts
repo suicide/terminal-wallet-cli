@@ -104,7 +104,7 @@ export const refreshNow = async (ctx: DeckContext): Promise<void> => {
 };
 
 /**
- * Broadcaster allow/blocklist, and the order favourites are tried in.
+ * Broadcaster favourites/blocklist, and the order favourites are tried in.
  *
  * Favourites are ranked: #1 is the broadcaster new sends default to, and the
  * rest are fallbacks in order. Selecting a row opens its actions rather than
@@ -139,7 +139,7 @@ export const showBroadcasterList = async (): Promise<void> => {
     });
     choices.push({ label: "Done", value: "__done" });
 
-    const picked = await provider.select("Broadcaster allow / blocklist", choices);
+    const picked = await provider.select("Broadcaster favorites / blocklist", choices);
     if (!picked || picked === "__done") {
       return;
     }

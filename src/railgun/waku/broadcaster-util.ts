@@ -1,18 +1,16 @@
-import { baseAllowList, baseBlockList, isWakuLoaded, wakuClient } from "./connect-waku";
+import { baseBlockList, isWakuLoaded, wakuClient } from "./connect-waku";
 
 /**
- * Undefined, not `[]`, until a mutation gives them content.
+ * Undefined, not `[]`, until a mutation gives it content.
  *
- * The SDK's rule is `!allowlist || allowlist.includes(address)`. An empty ARRAY
- * is truthy, so it does not mean "no restriction" — it means `[].includes(...)`
- * for every candidate, which admits nobody. Seeded with `[]` these filters
- * silently hid every broadcaster the first time one was blocked, before the
- * allow list had been populated with anything.
+ * The SDK's rule is `!blocklist || !blocklist.includes(address)`. An empty
+ * ARRAY is truthy, so `[]` is not "no restriction" there either — it is a
+ * harmless no-op here, but `undefined` is what the allow list uses to mean
+ * "admit everyone", so both lists stay undefined until populated.
  */
-let currentAllowList: Optional<string[]> = undefined;
 let currentBlockList: Optional<string[]> = undefined;
 
-/** A mutable copy, so pushing to a filter never edits the base list in place. */
+/** A mutable copy, so pushing to the filter never edits the base list in place. */
 const startFrom = (base: Optional<string[]>): string[] => [...(base ?? [])];
 
 export const addRemovedBroadcaster = (broadcasterAddress: string) => {
@@ -26,27 +24,10 @@ export const addRemovedBroadcaster = (broadcasterAddress: string) => {
     currentBlockList = startFrom(baseBlockList);
   }
   currentBlockList.push(broadcasterAddress);
-  // Blocking must not widen the allow list. Left undefined it would, so carry
-  // the base restriction forward untouched.
-  currentAllowList ??= baseAllowList;
-  // Both lists, every time. Passing `undefined` here cleared the allow list as
-  // a side effect of blocking someone, so the two setters disagreed about what
-  // the filters were and whichever ran last won.
-  wakuClient.setAddressFilters(currentAllowList, currentBlockList);
-};
-
-export const addChosenBroadcaster = (broadcasterAddress: string) => {
-  if (!isWakuLoaded()) {
-    throw new Error("Waku Client is not Loaded");
-  }
-  if (!wakuClient) {
-    return;
-  }
-  if (!currentAllowList) {
-    currentAllowList = startFrom(baseAllowList);
-  }
-  currentAllowList.push(broadcasterAddress);
-  wakuClient.setAddressFilters(currentAllowList, currentBlockList);
+  // The allow list is passed as `undefined` on purpose: admission is decided by
+  // the SDK's trusted-fee-signer variance band, not by an address allow list.
+  // Blocking may only ever subtract from that set.
+  wakuClient.setAddressFilters(undefined, currentBlockList);
 };
 
 export const resetBroadcasterFilters = () => {
@@ -56,7 +37,6 @@ export const resetBroadcasterFilters = () => {
   if (!wakuClient) {
     return;
   }
-  currentAllowList = baseAllowList;
-  currentBlockList = baseBlockList;
-  wakuClient.setAddressFilters(currentAllowList, currentBlockList);
+  currentBlockList = baseBlockList ? startFrom(baseBlockList) : undefined;
+  wakuClient.setAddressFilters(undefined, currentBlockList);
 };
