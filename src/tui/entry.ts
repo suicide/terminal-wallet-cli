@@ -29,7 +29,7 @@ import { tag, short } from "./format/tags";
 import {
   pctDelta,
   deltaColor,
-  gasTicker,
+  formatGasCard,
   fmtAmount,
 } from "./format/deck";
 import { formatHistoryRows } from "./format/history";
@@ -52,6 +52,10 @@ import {
   CARD_H,
   CARD_TOP,
   TOP,
+  allocateDeckCards,
+  NON_GAS_KEYS,
+  GAS_KEY,
+  UTIL_KEY,
 } from "./layout";
 import { copyToClipboard } from "./widgets/clipboard";
 import { openModalCount, shifted } from "./widgets/modal";
@@ -200,14 +204,14 @@ export const runDeck = async (): Promise<void> => {
 
   const cardDefs: CardDef[] = [
     {
-      key: "wallet",
+      key: NON_GAS_KEYS[0],
       label: " ◆ wallet ",
       render: (s) =>
         [tag(s.walletName, "white"), tag(short(s.publicAddress), "gray"), tag("click → wallet", "gray")].join("\n"),
       click: () => void openWalletMenu(ctx),
     },
     {
-      key: "network",
+      key: NON_GAS_KEYS[1],
       label: " ○ network ",
       render: (s) =>
         [
@@ -220,7 +224,7 @@ export const runDeck = async (): Promise<void> => {
       click: () => void openNetworkMenu(ctx),
     },
     {
-      key: "status",
+      key: NON_GAS_KEYS[2],
       label: " ↻ sync ",
       render: (s) =>
         [
@@ -231,20 +235,37 @@ export const runDeck = async (): Promise<void> => {
       click: () => void refreshNow(ctx),
     },
     {
-      key: "gas",
+      key: GAS_KEY,
       label: " ▲ gas ",
       render: () => {
         const estimate = feeders.gasEstimate();
-        return [
-          tag("slowest · slower · slow · avg · fast · network", "gray"),
-          estimate ? tag(gasTicker(estimate), "magenta") : tag("—", "gray"),
-          tag("click → update", "gray"),
-        ].join("\n");
+        // Compact three-line gas card — user-approved layout (deck.ts):
+        //   net: <gwei>   slowest: <gwei>
+        //   slower: <gwei>   slow: <gwei>
+        //   average: <gwei>   fast: <gwei>
+        // Network is raw gasPrice (no baseFee double-count); other tiers are
+        // priority + baseFee via formatGwei. Exactly three content lines when an
+        // estimate exists; unavailable is a minimal placeholder with no legend,
+        // click hint, or units.
+        // Layout-level width guarantee: gas is only shown when at least
+        // GAS_MIN_BOX (46) / content 42 is available; the formatter receives
+        // the actual allocated gas content width from computeLayout.
+        if (!estimate) {
+          return [tag("—", "gray"), tag("—", "gray"), tag("—", "gray")].join("\n");
+        }
+        const screenW = (screen.width as number) || 80;
+        const screenH = (screen.height as number) || 24;
+        const lay = computeLayout({ width: screenW, height: screenH, wantLeft, wantRight });
+        const contentW = lay.gasContentWidth;
+        return formatGasCard(estimate, contentW)
+          .split("\n")
+          .map((line) => tag(line, "magenta"))
+          .join("\n");
       },
       click: () => void ctx.refreshChainStats(),
     },
     {
-      key: "utilities",
+      key: UTIL_KEY,
       label: " ▸ utilities ",
       // The card is the only advertisement this menu gets, so it names what is
       // actually inside. Listing two of four is how the 7702 console came to
@@ -258,9 +279,6 @@ export const runDeck = async (): Promise<void> => {
       click: () => void openUtilitiesMenu(ctx),
     },
   ];
-
-  const utilCard = cardDefs[cardDefs.length - 1];
-  const statusCardDefs = cardDefs.slice(0, -1);
   const cards = cardDefs.map((def) => {
     const box = blessed.box({
       parent: screen, top: CARD_TOP, height: CARD_H, tags: true, mouse: true, clickable: true, autoFocus: false,
@@ -340,19 +358,29 @@ export const runDeck = async (): Promise<void> => {
     }
     tooSmall.hide();
 
-    const shown = [...statusCardDefs.slice(0, l.statusCards), utilCard];
-    const cardWidth = Math.floor(width / shown.length);
+    // Layout-level gas width: gas is a wide card (46 box / 42 content) when shown;
+    // secondary status cards are reduced at narrower widths to keep gas readable
+    // while preserving all cards at sufficiently wide terminals.
+    // Single source of truth is the allocation result from layout.ts — card
+    // keys (wallet, network, status, gas, utilities) come from NON_GAS_KEYS/
+    // GAS_KEY/UTIL_KEY so a mismatch cannot silently omit the status card.
+    const allocations = allocateDeckCards(width, l);
+    const defByKey = new Map(cardDefs.map((d) => [d.key, d]));
+    const cardByKey = new Map(cards.map((c) => [c.def.key, c]));
     for (const card of cards) card.visible = false;
-    shown.forEach((def, index) => {
-      const card = cards.find((c) => c.def.key === def.key);
-      if (!card) return;
+    let left = 0;
+    allocations.forEach(({ key, boxWidth }) => {
+      const def = defByKey.get(key);
+      if (!def) throw new Error(`missing CardDef for allocated key: ${key}`);
+      const card = cardByKey.get(key);
+      if (!card) throw new Error(`missing card widget for key: ${key}`);
       card.visible = true;
       card.box.show();
       card.box.top = CARD_TOP;
       card.box.height = CARD_H;
-      card.box.left = index * cardWidth;
-      card.box.width =
-        index === shown.length - 1 ? width - index * cardWidth : cardWidth;
+      card.box.left = left;
+      card.box.width = boxWidth;
+      left += boxWidth;
     });
     for (const card of cards) if (!card.visible) card.box.hide();
 

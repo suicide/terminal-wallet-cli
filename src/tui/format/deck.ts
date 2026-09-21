@@ -91,12 +91,39 @@ export const fmtAmount = (raw: string, maxFrac = 6): string => {
 };
 
 /**
- * Gas ticker "18 / 24 / 39 gwei" from the fee matrix (maxFee per speed). Values
- * ≥1 gwei round to an integer; sub-gwei values keep up to 3 decimals with a
- * 0.001 gwei floor so tiny-but-nonzero fees never display as a misleading "0".
+ * Shared gwei precision policy for both the percentile ticker and the Network
+ * quote. Keeps the same readability rules so the two never drift:
+ * - 0 => "0"
+ * - ≥100 gwei => 1 decimal (bounds the line)
+ * - ≥1 gwei => 2 decimals (tier differences stay visible)
+ * - <1 gwei => up to 3 decimals with 0.001 floor (the whole figure down here)
  */
+export const formatGwei = (value: bigint): string => {
+  const gwei = Number(formatUnits(value, "gwei"));
+  if (gwei <= 0) return "0";
+  if (gwei >= 100) return gwei.toFixed(1);
+  if (gwei >= 1) return gwei.toFixed(2);
+  // Sub-gwei: keep the precision that is the whole figure down here.
+  return Math.max(0.001, Number(gwei.toFixed(3))).toString();
+};
+
 /**
- * The five tiers as they actually differ.
+ * Raw Network gasPrice formatted with the shared precision policy plus " gwei".
+ * Uses eth_gasPrice directly — the node's total effective price — without
+ * adding baseFee (which would double-count).
+ */
+export const formatNetworkGasPrice = (
+  gasPriceOrEstimate: bigint | Pick<CustomGasEstimate, "gasPrice">,
+): string => {
+  const gasPrice =
+    typeof gasPriceOrEstimate === "bigint"
+      ? gasPriceOrEstimate
+      : gasPriceOrEstimate.gasPrice;
+  return `${formatGwei(gasPrice)} gwei`;
+};
+
+/**
+ * The five percentile tiers as they actually differ — baseFee + tip.
  *
  * Never rounded to whole gwei. Below about 20 gwei the whole spread between
  * slow and fast is often under a gwei, so rounding printed "14 / 14 / 14" for
@@ -104,23 +131,66 @@ export const fmtAmount = (raw: string, maxFrac = 6): string => {
  * like it was working. Two decimals is where a tier difference stops being
  * visible in a fee, and a fixed width keeps the header from jittering as it
  * updates; the one decimal above 100 is to bound the line.
+ *
+ * Returns five slash-separated effective prices ("a / b / c / d / e gwei").
+ * Network gasPrice is rendered separately via formatNetworkGasPrice so it is
+ * never clipped after the percentile values and never double-counts baseFee.
  */
 export const gasTicker = (est: CustomGasEstimate): string => {
-  const fmtGwei = (value: bigint): string => {
-    const gwei = Number(formatUnits(value, "gwei"));
-    if (gwei <= 0) return "0";
-    if (gwei >= 100) return gwei.toFixed(1);
-    if (gwei >= 1) return gwei.toFixed(2);
-    // Sub-gwei: keep the precision that is the whole figure down here.
-    return Math.max(0.001, Number(gwei.toFixed(3))).toString();
-  };
   // Five percentile tiers: total = priority + baseFee.
-  const parts = [est.slowest, est.slower, est.slow, est.average, est.fast]
-    .map((p) => fmtGwei(p + est.baseFeePerGas));
-  // Network tier: raw gasPrice — it is already the total effective gas price
-  // the node quotes; adding baseFee again would double-count.
-  parts.push(fmtGwei(est.gasPrice));
+  const parts = [est.slowest, est.slower, est.slow, est.average, est.fast].map(
+    (p) => formatGwei(p + est.baseFeePerGas),
+  );
   return parts.join(" / ") + " gwei";
+};
+
+/**
+ * Compact three-line gas card — the user-approved layout.
+ *
+ * Exactly three rows, six labeled prices, no units, no legends, no click hints:
+ * - Row 1: `net: <gwei>   slowest: <gwei>`
+ * - Row 2: `slower: <gwei>   slow: <gwei>`
+ * - Row 3: `average: <gwei>   fast: <gwei>`
+ *
+ * Network is the raw `gasPrice` (no baseFee added — that would double-count);
+ * the other five tiers are `priority + baseFeePerGas`, each via `formatGwei`
+ * so all six share the same precision policy. Pricing/selection logic is
+ * unchanged — only labels and inter-column spacing adapt.
+ *
+ * Width-aware / full-label guarantee: `width` is the available card content
+ * width (excluding border and padding) supplied by layout. Layout guarantees
+ * at least GAS_MIN_CONTENT (42) / GAS_MIN_BOX (46) whenever gas is shown,
+ * which is sized to fit high real-world gas prices (e.g. baseFee 300 gwei
+ * plus tips) across all three rows without truncation. Earlier the minimum
+ * was 32 content cols, where large values (e.g. 250.0 gwei) could exceed the
+ * card and previously fell back to placeholders. That fallback is removed:
+ * when an estimate exists this formatter always returns the three full labeled
+ * rows with all six values, never placeholders or cryptic abbreviations
+ * (sst/slr/slo, avg/fst, single-letter). If a direct caller supplies a
+ * narrow width below what the full rows require, the formatter still returns
+ * the full rows — layout is responsible for suppressing the gas card below
+ * its threshold (86) rather than the formatter hiding an available estimate
+ * behind dashes. No legends, units, or click hints are emitted.
+ */
+export const formatGasCard = (est: CustomGasEstimate, _width?: number): string => {
+  const net = formatGwei(est.gasPrice);
+  const slowest = formatGwei(est.slowest + est.baseFeePerGas);
+  const slower = formatGwei(est.slower + est.baseFeePerGas);
+  const slow = formatGwei(est.slow + est.baseFeePerGas);
+  const average = formatGwei(est.average + est.baseFeePerGas);
+  const fast = formatGwei(est.fast + est.baseFeePerGas);
+
+  const long = [
+    `net: ${net}   slowest: ${slowest}`,
+    `slower: ${slower}   slow: ${slow}`,
+    `average: ${average}   fast: ${fast}`,
+  ];
+  // Full-label guarantee: never return placeholder dashes for a visible
+  // estimated gas card. Layout ensures at least 42 content cols when gas is
+  // visible, which fits even large values; for direct callers that pass a
+  // narrower width we still return the full rows rather than hiding the
+  // estimate.
+  return long.join("\n");
 };
 
 /**
