@@ -167,8 +167,7 @@ export const getProvedUnshieldBaseTokenTransaction = async (
       sendWithPublicWallet,
       overallBatchMinGasPrice,
       progressCallback,
-    ).finally(() => {
-    });
+    );
 
     const { transaction, nullifiers, preTransactionPOIsPerTxidLeafPerList } =
       await populateProvedUnshieldBaseToken(
@@ -185,8 +184,9 @@ export const getProvedUnshieldBaseTokenTransaction = async (
 
     return { transaction, nullifiers, preTransactionPOIsPerTxidLeafPerList };
   } catch (err) {
+    // Rethrow so an artifact-download failure is not masked as "Invalid proof".
     const error = err as Error;
     log.error(error.message);
-    return undefined;
+    throw error;
   }
 };

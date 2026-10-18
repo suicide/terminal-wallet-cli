@@ -398,8 +398,7 @@ export const getProvedZer0XSwapTransaction = async (
       overallBatchMinGasPrice,
       minGasLimit,
       progressCallback,
-    ).finally(() => {
-    });
+    );
 
     const { transaction, nullifiers, preTransactionPOIsPerTxidLeafPerList } =
       await populateProvedCrossContractCalls(
@@ -425,6 +424,7 @@ export const getProvedZer0XSwapTransaction = async (
       error.message,
       error.cause,
     );
+    throw error;
   }
 };
 

@@ -316,12 +316,7 @@ export const getProvedPrivateTransaction = async (
       sendWithPublicWallet,
       overallBatchMinGasPrice,
       progressCallback,
-    )
-      .catch((err) => {
-        log.error("We errored out");
-      })
-      .finally(() => {
-      });
+    );
     const proofEndTime = Date.now();
     const proofTimeElapsed = (proofEndTime - proofStartTime) / 1000;
     log.info(`Proof Generation Took ${proofTimeElapsed}s`);
@@ -341,8 +336,12 @@ export const getProvedPrivateTransaction = async (
       );
     return { transaction, nullifiers, preTransactionPOIsPerTxidLeafPerList };
   } catch (err) {
+    // Rethrow: swallowing here turns an artifact-download failure into a later
+    // "Invalid proof for this transaction" one frame down. The real cause must
+    // reach the caller.
     const error = err as Error;
     log.error(error.message);
+    throw error;
   }
 };
 

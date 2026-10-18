@@ -168,8 +168,7 @@ export const getProvedUnshieldERC20Transaction = async (
       sendWithPublicWallet,
       overallBatchMinGasPrice,
       progressCallback,
-    ).finally(() => {
-    });
+    );
 
     const { transaction, nullifiers, preTransactionPOIsPerTxidLeafPerList } =
       await populateProvedUnshield(
@@ -185,7 +184,9 @@ export const getProvedUnshieldERC20Transaction = async (
       );
     return { transaction, nullifiers, preTransactionPOIsPerTxidLeafPerList };
   } catch (err) {
+    // Rethrow so an artifact-download failure is not masked as "Invalid proof".
     const error = err as Error;
     log.error(error.message);
+    throw error;
   }
 };

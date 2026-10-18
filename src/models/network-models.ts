@@ -83,4 +83,10 @@ export type RemoteConfig = {
   apiKeys?: APIKeys;
   network: RPCConfig;
   trustedFeeSigner: string | string[];
+  /**
+   * Optional operator-supplied IPFS gateways used to fetch proving artifacts,
+   * tried in order before the SDK's built-in gateway. Only ever set from a
+   * local `local-config.json`; the on-chain config does not carry it.
+   */
+  artifactGateways?: string[];
 };

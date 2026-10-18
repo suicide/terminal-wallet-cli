@@ -23,6 +23,7 @@ import { groth16 } from "snarkjs";
 import configDefaults from "../../config/config-defaults";
 import LevelDOWN from "leveldown";
 import { createArtifactStore } from "../db/artifact-store";
+import { installArtifactGatewayPatch } from "./artifact-gateway";
 import { setRailgunFees } from "@railgun-community/cookbook";
 import { getChainForName, remoteConfig } from "../network/network-util";
 import { getProviderObjectFromURL } from "../../models/network-models";
@@ -143,6 +144,10 @@ export const initRailgunEngine = async () => {
   const skipMerkelTreeScans = false;
   const poiNodeURLs = remoteConfig.publicPoiAggregatorUrls ?? [];
   const customPOIList = undefined;
+
+  // Must run before the engine downloads any proving artifact, so the SDK's
+  // hardcoded gateway is replaced by the operator's configured list.
+  installArtifactGatewayPatch();
 
   await startRailgunEngine(
     "terminalwallet",

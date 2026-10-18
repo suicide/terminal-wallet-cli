@@ -51,6 +51,7 @@ Place a `local-config.json` in the working directory (the directory from which t
 - **Complete replacement**: when present and valid, it fully replaces the on-chain RemoteConfig — it is **not** merged with on-chain values.
 - **Validation**: the file must be valid JSON matching the full `RemoteConfig` shape. A valid-JSON file with an invalid shape (wrong types, missing required fields) is rejected with a structured warning and the app falls through to the on-chain path.
 - **Provider overrides**: `twallet.config.json` provider overrides still apply later and retain their existing precedence.
+- **Artifact gateways**: the optional `artifactGateways` array lists IPFS gateways to fetch proving artifacts from, tried in order before the SDK's built-in gateway. Point it at a local/private gateway that already holds the circuits (e.g. `"artifactGateways": ["https://ipfs.example.internal"]`). It only affects artifact downloads and is ignored if absent. Proving circuits are fetched by individual file CID and hash-checked, and each vkey is exported from its verified zkey, so a gateway that holds the files but cannot resolve the SDK's directory CID still works. Internal operator addresses stay in this untracked file, never in the repository.
 - **Empty address allow list**: the allow list remains empty (no address restriction) regardless of local config. Trusted fee signer behaviour is separate and untouched.
 
 ### Example

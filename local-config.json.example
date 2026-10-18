@@ -6,6 +6,9 @@
   "publicPoiAggregatorUrls": [
     "https://ppoi.fdi.network"
   ],
+  "artifactGateways": [
+    "https://ipfs.example.internal"
+  ],
   "apiKeys": {
     "zeroXApi": "YOUR_ZERO_X_API_KEY_HERE"
   },

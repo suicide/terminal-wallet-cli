@@ -243,9 +243,8 @@ export const getProvedCrossContractTransaction = async (
       overallBatchMinGasPrice,
       minGasLimit,
       progressCallback,
-    ).finally(() => {
-      emitCoreEvent({ type: "tx:progress", phase: "prove", pct: 100, message: "Proof complete" });
-    });
+    );
+    emitCoreEvent({ type: "tx:progress", phase: "prove", pct: 100, message: "Proof complete" });
 
     const { transaction, nullifiers, preTransactionPOIsPerTxidLeafPerList } =
       await populateProvedCrossContractCalls(
@@ -268,7 +267,8 @@ export const getProvedCrossContractTransaction = async (
     transaction.type = EVMGasType.Type4;
     return { transaction, nullifiers, preTransactionPOIsPerTxidLeafPerList };
   } catch (err) {
+    // Rethrow so an artifact-download failure is not masked as "Invalid proof".
     log.error("proved cross-contract tx failed", err);
-    return undefined;
+    throw err;
   }
 };
